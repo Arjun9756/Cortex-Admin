@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cortex Control Plane | Licensing & Admin Console</title>
+    <meta name="description" content="Centralized license validation, client management, and heartbeat telemetry for Cortex Application.">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div id="app-container" class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand-container">
+                <div class="brand-logo">
+                    <div class="logo-core"></div>
+                    <div class="logo-ring"></div>
+                </div>
+                <div class="brand-text">
+                    <h1>CORTEX</h1>
+                    <span class="brand-sub">CONTROL PLANE</span>
+                </div>
+            </div>
+
+            <div class="system-status-badge">
+                <span class="pulse-dot"></span>
+                <span class="status-label" id="server-status-label">SERVER ONLINE</span>
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-item active" data-tab="overview" id="nav-overview">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    <span>Overview & Analytics</span>
+                </button>
+                <button class="nav-item" data-tab="clients" id="nav-clients">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    <span>Clients</span>
+                </button>
+                <button class="nav-item" data-tab="licenses" id="nav-licenses">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    <span>Licenses</span>
+                </button>
+                <button class="nav-item highlight" data-tab="simulator" id="nav-simulator">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                    <span>Heartbeat Simulator</span>
+                    <span class="badge-mini">TEST</span>
+                </button>
+                <button class="nav-item" data-tab="admins" id="nav-admins">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    <span>Administrators</span>
+                </button>
+                <button class="nav-item" data-tab="logs" id="nav-logs">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    <span>Telemetry Logs</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="admin-profile-card">
+                    <div class="admin-avatar" id="current-admin-avatar">SA</div>
+                    <div class="admin-meta">
+                        <span class="admin-name" id="current-admin-name">Super Admin</span>
+                        <span class="admin-role-tag" id="current-admin-role">super_admin</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Header Bar -->
+            <header class="top-header">
+                <div class="header-left">
+                    <h2 class="view-title" id="page-title">System Overview</h2>
+                    <span class="view-subtitle" id="page-subtitle">Real-time health, licensing status & heartbeat telemetry</span>
+                </div>
+                <div class="header-right">
+                    <div class="clock-display" id="live-clock">--:--:-- --</div>
+                    <button class="action-btn btn-glass" id="refresh-all-btn" title="Refresh Data">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                        <span>Refresh</span>
+                    </button>
+                    <div class="ping-rate-badge">
+                        <span>Ping Interval: <strong>6h</strong></span>
+                    </div>
+                </div>
+            </header>
+
+            <div class="view-container">
+                <!-- TAB 1: OVERVIEW & ANALYTICS -->
+                <section class="tab-pane active" id="tab-overview">
+                    <!-- Timeframe Selector & Export Toolbar -->
+                    <div class="analytics-toolbar card-glass">
+                        <div class="toolbar-left">
+                            <span class="toolbar-label">Timeframe:</span>
+                            <div class="timeframe-pills">
+                                <button class="timeframe-btn active" data-range="24h" id="range-24h">Last 24 Hours</button>
+                                <button class="timeframe-btn" data-range="7d" id="range-7d">Last 7 Days</button>
+                                <button class="timeframe-btn" data-range="30d" id="range-30d">Last 30 Days</button>
+                            </div>
+                        </div>
+                        <div class="toolbar-right">
+                            <div class="fleet-health-indicator" id="fleet-health-pill">
+                                <span class="health-pulse-dot healthy"></span>
+                                <span id="fleet-health-badge-text">Fleet: 100% Online</span>
+                            </div>
+                            <button class="action-btn btn-glass btn-sm" id="btn-export-telemetry-csv" title="Download all telemetry as CSV">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-sm"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                <span>Export Telemetry CSV</span>
+                            </button>
+                            <button class="action-btn btn-glass btn-sm" id="btn-export-licenses-csv" title="Download license registry as CSV">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-sm"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                <span>Export Licenses CSV</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Metric Cards -->
+                    <div class="kpi-grid">
+                        <div class="kpi-card card-cyan">
+                            <div class="kpi-header">
+                                <span class="kpi-title">Active Licenses</span>
+                                <div class="kpi-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div>
+                            </div>
+                            <div class="kpi-value" id="kpi-active-licenses">0</div>
+                            <div class="kpi-footer">
+                                <span id="kpi-total-licenses">0 total issued</span>
+                                <span class="tag-status-active" id="kpi-license-ratio">100% active</span>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card card-indigo">
+                            <div class="kpi-header">
+                                <span class="kpi-title">Client Fleet Availability</span>
+                                <div class="kpi-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg></div>
+                            </div>
+                            <div class="kpi-value" id="kpi-active-clients">0</div>
+                            <div class="kpi-footer fleet-status-mini">
+                                <span class="fleet-dot-tag online" id="kpi-fleet-healthy">0 Online</span>
+                                <span class="fleet-dot-tag delayed" id="kpi-fleet-delayed">0 Delayed</span>
+                                <span class="fleet-dot-tag offline" id="kpi-fleet-offline">0 Offline</span>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card card-emerald">
+                            <div class="kpi-header">
+                                <span class="kpi-title">Heartbeat Telemetry</span>
+                                <div class="kpi-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg></div>
+                            </div>
+                            <div class="kpi-value" id="kpi-today-pings">0</div>
+                            <div class="kpi-footer">
+                                <span id="kpi-today-success">0 success</span>
+                                <span class="tag-status-active" id="kpi-success-rate">100% allowed</span>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card card-rose">
+                            <div class="kpi-header">
+                                <span class="kpi-title">Security & Gating Radar</span>
+                                <div class="kpi-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg></div>
+                            </div>
+                            <div class="kpi-value" id="kpi-blocked-licenses">0</div>
+                            <div class="kpi-footer">
+                                <span id="kpi-security-anomalies">0 unauthorized key tries</span>
+                                <span class="tag-status-revoked">Gating Active</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 1: Charts & Intelligence Breakdown -->
+                    <div class="dashboard-grid">
+                        <!-- Left: Heartbeat Activity Timeline + Failure Breakdown -->
+                        <div class="panel card-glass">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <h3 class="panel-title" id="timeline-chart-title">Heartbeat Pings Activity</h3>
+                                    <p class="panel-desc">Periodic 5–7 hour verification pings received by license engine</p>
+                                </div>
+                                <span class="badge-accent" id="timeline-range-badge">24h View</span>
+                            </div>
+                            
+                            <div class="chart-container" id="ping-chart-container">
+                                <div class="chart-placeholder">Loading heartbeat telemetry...</div>
+                            </div>
+
+                            <!-- Failure Diagnostic Inspector -->
+                            <div class="diagnostic-section" id="diagnostic-section">
+                                <div class="diagnostic-header">
+                                    <h4>Verification Failure Diagnostics</h4>
+                                    <span class="diagnostic-stat" id="diagnostic-total-failed">0 Failed Attempts</span>
+                                </div>
+                                <div class="failure-breakdown-list" id="failure-breakdown-container">
+                                    <div class="clean-pass-banner">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-clean"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                        <span>100% Clean Gating — No authorization failures detected in this window</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Fleet Environment & License Breakdown -->
+                        <div class="panel card-glass environment-panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <h3 class="panel-title">Fleet Intelligence</h3>
+                                    <p class="panel-desc">Client environment & license status distribution</p>
+                                </div>
+                            </div>
+
+                            <!-- OS / Platform Breakdown -->
+                            <div class="env-group">
+                                <span class="env-group-title">Operating System Distribution</span>
+                                <div class="env-meters" id="platform-meters-container">
+                                    <div class="dist-row">
+                                        <div class="dist-label"><span class="os-icon os-win"></span> Windows</div>
+                                        <div class="dist-bar-wrap"><div class="dist-bar bar-active" style="width: 100%"></div></div>
+                                        <span class="dist-count">100%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- App Version Distribution -->
+                            <div class="env-group">
+                                <span class="env-group-title">Cortex Client App Versions</span>
+                                <div class="env-meters" id="version-meters-container">
+                                    <div class="dist-row">
+                                        <div class="dist-label"><span class="dot active"></span> v1.0.4</div>
+                                        <div class="dist-bar-wrap"><div class="dist-bar bar-active" style="width: 100%"></div></div>
+                                        <span class="dist-count">100%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- License Status Breakdown -->
+                            <div class="env-group">
+                                <span class="env-group-title">License Portfolio Status</span>
+                                <div class="distribution-list">
+                                    <div class="dist-row">
+                                        <div class="dist-label"><span class="dot active"></span> Active & Valid</div>
+                                        <div class="dist-bar-wrap"><div class="dist-bar bar-active" id="bar-active" style="width: 0%"></div></div>
+                                        <span class="dist-count" id="dist-active-val">0</span>
+                                    </div>
+                                    <div class="dist-row">
+                                        <div class="dist-label"><span class="dot expired"></span> Expired</div>
+                                        <div class="dist-bar-wrap"><div class="dist-bar bar-expired" id="bar-expired" style="width: 0%"></div></div>
+                                        <span class="dist-count" id="dist-expired-val">0</span>
+                                    </div>
+                                    <div class="dist-row">
+                                        <div class="dist-label"><span class="dot revoked"></span> Revoked</div>
+                                        <div class="dist-bar-wrap"><div class="dist-bar bar-revoked" id="bar-revoked" style="width: 0%"></div></div>
+                                        <span class="dist-count" id="dist-revoked-val">0</span>
+                                    </div>
+                                    <div class="dist-row">
+                                        <div class="dist-label"><span class="dot suspended"></span> Suspended</div>
+                                        <div class="dist-bar-wrap"><div class="dist-bar bar-suspended" id="bar-suspended" style="width: 0%"></div></div>
+                                        <span class="dist-count" id="dist-suspended-val">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 2: Operational Intelligence (Expiry Watchlist & Heartbeat Availability) -->
+                    <div class="operational-grid">
+                        <!-- Panel A: License Expiry Watchlist -->
+                        <div class="panel card-glass">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <h3 class="panel-title">License Expiry Watchlist (Next 30 Days)</h3>
+                                    <p class="panel-desc">Proactive renewal tracking for expiring customer licenses</p>
+                                </div>
+                                <span class="tag-meta" id="expiring-watchlist-count">0 Expiring Soon</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Organization</th>
+                                            <th>License Key</th>
+                                            <th>Expiry Date</th>
+                                            <th>Time Remaining</th>
+                                            <th class="text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="expiry-watchlist-body">
+                                        <tr><td colspan="5" class="text-center py-4">No licenses expiring in the next 30 days. All active licenses healthy.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Panel B: Client Fleet Heartbeat Health -->
+                        <div class="panel card-glass">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <h3 class="panel-title">Client Heartbeat Health & Availability</h3>
+                                    <p class="panel-desc">Real-time status based on periodic 5–7 hour ping cadence</p>
+                                </div>
+                                <span class="badge-accent" id="fleet-active-badge">Fleet Monitoring</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Organization</th>
+                                            <th>Licenses</th>
+                                            <th>Last Heartbeat</th>
+                                            <th>Heartbeat Status</th>
+                                            <th class="text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="client-health-roster-body">
+                                        <tr><td colspan="5" class="text-center py-4">Loading client availability...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 3: Recent Live Activity Feed -->
+                    <div class="panel card-glass">
+                        <div class="panel-header">
+                            <div class="panel-title-group">
+                                <h3 class="panel-title">Recent Cortex Client Pings</h3>
+                                <p class="panel-desc">Real-time incoming heartbeat requests from clients</p>
+                            </div>
+                            <button class="btn-xs" onclick="window.app.switchTab('logs')">View Full Log</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>Client / Organization</th>
+                                        <th>License Key</th>
+                                        <th>IP Address</th>
+                                        <th>Verification Result</th>
+                                        <th>Metadata</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="overview-recent-pings-body">
+                                    <tr><td colspan="6" class="text-center py-4">No recent pings recorded yet.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 2: CLIENT MANAGEMENT -->
+                <section class="tab-pane" id="tab-clients">
+                    <div class="panel card-glass">
+                        <div class="panel-header">
+                            <div class="filter-bar">
+                                <div class="search-input-wrap">
+                                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    <input type="text" id="client-search-input" placeholder="Search by org, contact or email...">
+                                </div>
+                                <select id="client-status-filter" class="select-input">
+                                    <option value="">All Statuses</option>
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                    <option value="suspended">Suspended</option>
+                                </select>
+                            </div>
+                            <button class="action-btn btn-primary" id="btn-open-add-client">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                <span>Add New Client</span>
+                            </button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Organization</th>
+                                        <th>Contact Person</th>
+                                        <th>Email</th>
+                                        <th>Phone</th>
+                                        <th>Status</th>
+                                        <th>Active Licenses</th>
+                                        <th>Created At</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="clients-table-body">
+                                    <tr><td colspan="8" class="text-center py-6">Loading clients...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 3: LICENSE MANAGEMENT -->
+                <section class="tab-pane" id="tab-licenses">
+                    <div class="panel card-glass">
+                        <div class="panel-header">
+                            <div class="filter-bar">
+                                <div class="search-input-wrap">
+                                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    <input type="text" id="license-search-input" placeholder="Search by license key or client...">
+                                </div>
+                                <select id="license-status-filter" class="select-input">
+                                    <option value="">All Statuses</option>
+                                    <option value="active">Active</option>
+                                    <option value="expired">Expired</option>
+                                    <option value="revoked">Revoked</option>
+                                    <option value="suspended">Suspended</option>
+                                </select>
+                            </div>
+                            <button class="action-btn btn-primary" id="btn-open-issue-license">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                <span>Issue License Key</span>
+                            </button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>License Key</th>
+                                        <th>Client Organization</th>
+                                        <th>Status</th>
+                                        <th>Issued Date</th>
+                                        <th>Expiry Date</th>
+                                        <th>Last Heartbeat</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="licenses-table-body">
+                                    <tr><td colspan="7" class="text-center py-6">Loading licenses...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 4: CORTEX HEARTBEAT SIMULATOR (LIVE TEST BENCH) -->
+                <section class="tab-pane" id="tab-simulator">
+                    <div class="simulator-layout">
+                        <div class="panel card-glass simulator-form-panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <h3 class="panel-title">Cortex Client Heartbeat Tester</h3>
+                                    <p class="panel-desc">Simulate the Cortex Desktop App sending periodic 5–7 hour verification pings to this server</p>
+                                </div>
+                                <span class="badge-accent">Interactive Tool</span>
+                            </div>
+
+                            <form id="simulator-form" class="form-grid">
+                                <div class="form-group full-width">
+                                    <label for="sim-license-key">License Key to Verify</label>
+                                    <div class="input-with-select">
+                                        <input type="text" id="sim-license-key" required placeholder="e.g. 7A1F-9C84-2B03-D4E1" autocomplete="off">
+                                        <select id="sim-quick-key-picker" class="select-inline">
+                                            <option value="">Pick from issued licenses...</option>
+                                        </select>
+                                    </div>
+                                    <span class="input-hint">Enter an issued key, or type a random string to test invalid key rejection.</span>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="sim-machine-id">Machine ID (HWID)</label>
+                                    <input type="text" id="sim-machine-id" value="HWID-CORTEX-WIN-8934">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="sim-app-version">App Version</label>
+                                    <input type="text" id="sim-app-version" value="1.0.4">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="sim-platform">Platform / OS</label>
+                                    <select id="sim-platform" class="select-input">
+                                        <option value="win32">Windows (win32)</option>
+                                        <option value="darwin">macOS (darwin)</option>
+                                        <option value="linux">Linux (x86_64)</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="sim-ip">Simulated IP Address</label>
+                                    <input type="text" id="sim-ip" value="192.168.1.100">
+                                </div>
+
+                                <div class="form-group full-width">
+                                    <button type="submit" class="action-btn btn-primary full-width" id="btn-send-ping">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                                        <span>Send Heartbeat Ping to /api/license/ping</span>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Response Console -->
+                        <div class="panel card-glass simulator-console-panel">
+                            <div class="panel-header">
+                                <div class="panel-title-group">
+                                    <h3 class="panel-title">Verification Response Console</h3>
+                                    <p class="panel-desc">Real-time gating decision returned to Cortex App</p>
+                                </div>
+                                <div class="response-status-badge" id="sim-status-badge">
+                                    <span>Awaiting Ping</span>
+                                </div>
+                            </div>
+
+                            <div class="decision-banner-wrap" id="sim-decision-container" style="display: none;">
+                                <div class="decision-banner" id="sim-decision-banner">
+                                    <div class="decision-icon" id="sim-decision-icon"></div>
+                                    <div class="decision-content">
+                                        <h4 id="sim-decision-title">ACCESS ALLOWED</h4>
+                                        <p id="sim-decision-desc">Valid active license. Cortex client authorized to run.</p>
+                                    </div>
+                                    <div class="decision-meta" id="sim-decision-meta">
+                                        <span id="sim-latency">Latency: 12ms</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="json-viewer-header">
+                                <span>Response Payload (JSON):</span>
+                                <span class="badge-mini" id="sim-http-code">HTTP 200</span>
+                            </div>
+                            <pre class="json-code-box" id="sim-json-output">// Click "Send Heartbeat Ping" to execute verification...</pre>
+
+                            <div class="simulation-guide-box">
+                                <h4>Heartbeat Verification Rules:</h4>
+                                <ul>
+                                    <li>If <strong>Active & Not Expired</strong>: Server returns <code>allowed: true</code>, updates <code>last_validated_at</code>.</li>
+                                    <li>If <strong>Expired</strong>: Server auto-updates status to <code>expired</code> and returns <code>allowed: false</code>.</li>
+                                    <li>If <strong>Revoked / Suspended</strong>: Server immediately returns <code>allowed: false</code>.</li>
+                                    <li>If <strong>Invalid Key</strong>: Server logs security telemetry and rejects ping.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 5: ADMIN MANAGEMENT -->
+                <section class="tab-pane" id="tab-admins">
+                    <div class="panel card-glass">
+                        <div class="panel-header">
+                            <div class="panel-title-group">
+                                <h3 class="panel-title">Administrator Accounts</h3>
+                                <p class="panel-desc">Authorized administrators who can access this control plane</p>
+                            </div>
+                            <button class="action-btn btn-primary" id="btn-open-add-admin">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                <span>Add New Admin</span>
+                            </button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th>Created Date</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admins-table-body">
+                                    <tr><td colspan="5" class="text-center py-6">Loading administrators...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 6: AUDIT & TELEMETRY LOGS -->
+                <section class="tab-pane" id="tab-logs">
+                    <div class="panel card-glass">
+                        <div class="panel-header">
+                            <div class="filter-bar">
+                                <div class="search-input-wrap">
+                                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    <input type="text" id="log-search-input" placeholder="Search by IP, Machine ID, or Key...">
+                                </div>
+                                <select id="log-action-filter" class="select-input">
+                                    <option value="">All Action Types</option>
+                                    <option value="ping">Heartbeat Pings</option>
+                                    <option value="query">Queries</option>
+                                    <option value="export">Exports</option>
+                                </select>
+                                <select id="log-status-filter" class="select-input">
+                                    <option value="">All Statuses</option>
+                                    <option value="success">Success Only</option>
+                                    <option value="failed">Failed / Blocked Only</option>
+                                </select>
+                                <div class="auto-refresh-toggle">
+                                    <input type="checkbox" id="log-auto-refresh" checked>
+                                    <label for="log-auto-refresh">Live Poll (10s)</label>
+                                </div>
+                            </div>
+                            <div class="header-action-group">
+                                <button class="action-btn btn-glass" id="btn-export-logs-csv" title="Export current logs as CSV">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-sm"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>Export CSV</span>
+                                </button>
+                                <button class="action-btn btn-glass" id="btn-refresh-logs">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                    <span>Refresh</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Timestamp</th>
+                                        <th>Action</th>
+                                        <th>Status</th>
+                                        <th>Client Org</th>
+                                        <th>License Key</th>
+                                        <th>IP Address</th>
+                                        <th>Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="logs-table-body">
+                                    <tr><td colspan="8" class="text-center py-6">Loading telemetry logs...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL 1: ADD CLIENT -->
+    <div class="modal-backdrop" id="modal-add-client">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>Add New Client Organization</h3>
+                <button class="modal-close" onclick="window.app.closeModals()">&times;</button>
+            </div>
+            <form id="form-add-client">
+                <div class="modal-body form-grid">
+                    <div class="form-group full-width">
+                        <label for="client-org-name">Organization / Company Name *</label>
+                        <input type="text" id="client-org-name" required placeholder="e.g. Apex Global Technologies">
+                    </div>
+                    <div class="form-group">
+                        <label for="client-contact-name">Contact Person *</label>
+                        <input type="text" id="client-contact-name" required placeholder="e.g. Rahul Sharma">
+                    </div>
+                    <div class="form-group">
+                        <label for="client-email">Email Address *</label>
+                        <input type="email" id="client-email" required placeholder="e.g. rahul@apex.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="client-phone">Phone Number</label>
+                        <input type="text" id="client-phone" placeholder="e.g. +91 98765 43210">
+                    </div>
+                    <div class="form-group">
+                        <label for="client-status">Initial Status</label>
+                        <select id="client-status" class="select-input">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                            <option value="suspended">Suspended</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                    <button type="submit" class="btn-primary">Register Client</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 2: EDIT CLIENT -->
+    <div class="modal-backdrop" id="modal-edit-client">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>Edit Client Details</h3>
+                <button class="modal-close" onclick="window.app.closeModals()">&times;</button>
+            </div>
+            <form id="form-edit-client">
+                <input type="hidden" id="edit-client-id">
+                <div class="modal-body form-grid">
+                    <div class="form-group full-width">
+                        <label for="edit-client-org">Organization Name *</label>
+                        <input type="text" id="edit-client-org" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-client-contact">Contact Person *</label>
+                        <input type="text" id="edit-client-contact" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-client-email">Email Address *</label>
+                        <input type="email" id="edit-client-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-client-phone">Phone Number</label>
+                        <input type="text" id="edit-client-phone">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-client-status">Status</label>
+                        <select id="edit-client-status" class="select-input">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                            <option value="suspended">Suspended</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 3: ISSUE LICENSE -->
+    <div class="modal-backdrop" id="modal-issue-license">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>Issue New License Key</h3>
+                <button class="modal-close" onclick="window.app.closeModals()">&times;</button>
+            </div>
+            <form id="form-issue-license">
+                <div class="modal-body form-grid">
+                    <div class="form-group full-width">
+                        <label for="issue-client-id">Select Client Organization *</label>
+                        <select id="issue-client-id" required class="select-input">
+                            <option value="">Choose a client...</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="issue-validity-preset">License Validity</label>
+                        <div class="radio-chip-group">
+                            <label class="chip-label">
+                                <input type="radio" name="validity_preset" value="30">
+                                <span>30 Days</span>
+                            </label>
+                            <label class="chip-label">
+                                <input type="radio" name="validity_preset" value="90">
+                                <span>90 Days</span>
+                            </label>
+                            <label class="chip-label">
+                                <input type="radio" name="validity_preset" value="264" checked>
+                                <span>264 Days (Default)</span>
+                            </label>
+                            <label class="chip-label">
+                                <input type="radio" name="validity_preset" value="365">
+                                <span>1 Year</span>
+                            </label>
+                            <label class="chip-label">
+                                <input type="radio" name="validity_preset" value="custom">
+                                <span>Custom</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group full-width" id="custom-days-wrap" style="display: none;">
+                        <label for="issue-custom-days">Custom Validity (Days)</label>
+                        <input type="number" id="issue-custom-days" min="1" max="3650" placeholder="e.g. 180">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                    <button type="submit" class="btn-primary">Generate & Issue Key</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 4: ADD ADMIN -->
+    <div class="modal-backdrop" id="modal-add-admin">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>Add New Administrator</h3>
+                <button class="modal-close" onclick="window.app.closeModals()">&times;</button>
+            </div>
+            <form id="form-add-admin">
+                <div class="modal-body form-grid">
+                    <div class="form-group full-width">
+                        <label for="admin-name">Admin Name *</label>
+                        <input type="text" id="admin-name" required placeholder="e.g. Vikram Verma">
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-email">Email Address *</label>
+                        <input type="email" id="admin-email" required placeholder="e.g. vikram@cortex.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-role">Role</label>
+                        <select id="admin-role" class="select-input">
+                            <option value="admin">Admin</option>
+                            <option value="super_admin">Super Admin</option>
+                            <option value="viewer">Viewer</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="admin-password">Password (Minimum 6 characters) *</label>
+                        <input type="password" id="admin-password" required minlength="6" placeholder="••••••••">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                    <button type="submit" class="btn-primary">Create Administrator</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 5: VIEW DETAILS / METADATA -->
+    <div class="modal-backdrop" id="modal-metadata">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3 id="metadata-title">Telemetry Details</h3>
+                <button class="modal-close" onclick="window.app.closeModals()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <pre class="json-code-box" id="metadata-json-content"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="window.app.closeModals()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
