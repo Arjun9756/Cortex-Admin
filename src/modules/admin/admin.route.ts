@@ -18,3 +18,4 @@ router.put('/:id', requireSuperAdmin, AdminController.update);
 router.delete('/:id', requireSuperAdmin, AdminController.delete);
 
 export default router;
+ 
