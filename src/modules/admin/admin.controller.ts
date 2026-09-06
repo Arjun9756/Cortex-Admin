@@ -12,6 +12,20 @@ export const AdminController = {
         }
     },
 
+    async getMe(req: Request, res: Response) {
+        try {
+            if (!req.admin) {
+                return res.status(401).json({ success: false, message: 'Not authenticated' });
+            }
+            res.status(200).json({
+                success: true,
+                admin: req.admin
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
     async getAll(req: Request, res: Response) {
         try {
             const admins = await AdminService.getAll();

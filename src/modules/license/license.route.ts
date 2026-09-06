@@ -1,19 +1,23 @@
 import { Router } from 'express';
 import { LicenseController } from './license.controller.js';
+import { requireAdmin } from '../../middleware/auth.middleware.js';
 
 const router = Router();
 
-// Heartbeat & Validation endpoints for Cortex Client App
+// Heartbeat & Validation endpoints for Cortex Client App & Simulator
+// 100% PUBLIC: Viewer and Cortex apps can verify licenses with ZERO signup/login
 router.post('/ping', LicenseController.ping);
 router.post('/verify', LicenseController.ping);
 
-// Admin Management endpoints
+// Read endpoints (Viewer allowed)
 router.get('/', LicenseController.getAll);
-router.post('/', LicenseController.create);
 router.get('/:id', LicenseController.getById);
 router.get('/client/:clientId', LicenseController.getByClient);
-router.patch('/:id/revoke', LicenseController.revoke);
-router.patch('/:id/status', LicenseController.updateStatus);
-router.delete('/:id', LicenseController.delete);
+
+// Mutating endpoints (Super Admin & Admin ONLY)
+router.post('/', requireAdmin, LicenseController.create);
+router.patch('/:id/revoke', requireAdmin, LicenseController.revoke);
+router.patch('/:id/status', requireAdmin, LicenseController.updateStatus);
+router.delete('/:id', requireAdmin, LicenseController.delete);
 
 export default router;

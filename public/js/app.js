@@ -16,7 +16,8 @@
         overview: null,
         autoRefreshInterval: null,
         logSearchQuery: '',
-        logStatusFilter: ''
+        logStatusFilter: '',
+        currentUser: null
     };
 
     // DOM Elements Cache
@@ -132,22 +133,52 @@
         modalMetadata: document.getElementById('modal-metadata'),
         metadataJsonContent: document.getElementById('metadata-json-content'),
 
+        // Auth & Role Indicators
+        headerAuthWrap: document.getElementById('header-auth-wrap'),
+        badgeRoleIndicator: document.getElementById('badge-role-indicator'),
+        badgeRoleText: document.getElementById('badge-role-text'),
+        rolePulseDot: document.getElementById('role-pulse-dot'),
+        btnHeaderAuth: document.getElementById('btn-header-auth'),
+        btnHeaderAuthText: document.getElementById('btn-header-auth-text'),
+        currentAdminAvatar: document.getElementById('current-admin-avatar'),
+        currentAdminName: document.getElementById('current-admin-name'),
+        currentAdminRole: document.getElementById('current-admin-role'),
+        sidebarProfileCard: document.getElementById('sidebar-profile-card'),
+        adminRestrictedBox: document.getElementById('admin-restricted-box'),
+        adminManagementPanel: document.getElementById('admin-management-panel'),
+        modalAdminLogin: document.getElementById('modal-admin-login'),
+        formAdminLogin: document.getElementById('form-admin-login'),
+        loginEmail: document.getElementById('login-email'),
+        loginPassword: document.getElementById('login-password'),
+        btnSubmitLogin: document.getElementById('btn-submit-login'),
+
         // Toasts
         toastContainer: document.getElementById('toast-container')
     };
 
     // ==========================================
-    // API Helper
+    // API Helper (with automatic Bearer token injection)
     // ==========================================
     async function apiRequest(endpoint, method = 'GET', body = null) {
         const headers = { 'Content-Type': 'application/json' };
+        const token = localStorage.getItem('cortex_admin_token');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
         const config = { method, headers };
         if (body) config.body = JSON.stringify(body);
 
         const res = await fetch(endpoint, config);
         const data = await res.json().catch(() => ({}));
-        if (!res.ok && res.status >= 500) {
-            throw new Error(data.message || `Server error (${res.status})`);
+        if (!res.ok) {
+            if (res.status === 401 && token) {
+                localStorage.removeItem('cortex_admin_token');
+                setAuthState(null);
+                showToast('Session expired. Reverted to Viewer mode.', 'warning');
+            }
+            if (res.status >= 500) {
+                throw new Error(data.message || `Server error (${res.status})`);
+            }
         }
         return data;
     }
@@ -242,6 +273,76 @@
         if (days < 0) return `<span class="text-rose">Expired ${Math.abs(days)}d ago</span>`;
         if (days === 0) return `<span class="text-amber">Expires today</span>`;
         return `<span class="text-emerald">${days} days left</span>`;
+    }
+
+    // ==========================================
+    // Role-Based Access Control (Admin vs Viewer)
+    // ==========================================
+    function isAdmin() {
+        return Boolean(state.currentUser && (state.currentUser.role === 'super_admin' || state.currentUser.role === 'admin'));
+    }
+
+    function setAuthState(admin) {
+        state.currentUser = admin;
+
+        if (admin) {
+            const isSuper = admin.role === 'super_admin';
+            if (elements.badgeRoleIndicator) elements.badgeRoleIndicator.className = 'badge-role-admin';
+            if (elements.rolePulseDot) elements.rolePulseDot.className = isSuper ? 'role-pulse-dot super' : 'role-pulse-dot admin';
+            if (elements.badgeRoleText) elements.badgeRoleText.textContent = isSuper ? 'Super Admin' : 'Admin';
+            if (elements.btnHeaderAuthText) elements.btnHeaderAuthText.textContent = 'Logout';
+            if (elements.btnHeaderAuth) elements.btnHeaderAuth.className = 'action-btn btn-glass btn-sm text-rose';
+            if (elements.currentAdminAvatar) elements.currentAdminAvatar.textContent = isSuper ? '👑' : '🛡️';
+            if (elements.currentAdminName) elements.currentAdminName.textContent = admin.name || admin.email;
+            if (elements.currentAdminRole) {
+                elements.currentAdminRole.textContent = admin.role.toUpperCase();
+                elements.currentAdminRole.className = isSuper ? 'admin-role-tag badge-accent' : 'admin-role-tag';
+            }
+            if (elements.adminRestrictedBox) elements.adminRestrictedBox.style.display = 'none';
+            if (elements.adminManagementPanel) elements.adminManagementPanel.style.display = 'block';
+        } else {
+            if (elements.badgeRoleIndicator) elements.badgeRoleIndicator.className = 'badge-role-viewer';
+            if (elements.rolePulseDot) elements.rolePulseDot.className = 'role-pulse-dot';
+            if (elements.badgeRoleText) elements.badgeRoleText.textContent = 'Viewer Mode';
+            if (elements.btnHeaderAuthText) elements.btnHeaderAuthText.textContent = 'Admin Login';
+            if (elements.btnHeaderAuth) elements.btnHeaderAuth.className = 'action-btn btn-primary btn-sm';
+            if (elements.currentAdminAvatar) elements.currentAdminAvatar.textContent = '👁️';
+            if (elements.currentAdminName) elements.currentAdminName.textContent = 'Guest Viewer';
+            if (elements.currentAdminRole) {
+                elements.currentAdminRole.textContent = 'VIEWER';
+                elements.currentAdminRole.className = 'admin-role-tag';
+            }
+            if (elements.adminRestrictedBox) elements.adminRestrictedBox.style.display = 'flex';
+            if (elements.adminManagementPanel) elements.adminManagementPanel.style.display = 'none';
+        }
+
+        // Re-render tables to show/hide action buttons
+        if (state.clients && state.clients.length > 0) renderClientsTable();
+        if (state.licenses && state.licenses.length > 0) renderLicensesTable();
+        if (state.currentTab === 'admins') loadAdmins();
+    }
+
+    async function checkAuthSession() {
+        const token = localStorage.getItem('cortex_admin_token');
+        if (!token) {
+            setAuthState(null);
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/admin/me', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success && data.admin) {
+                setAuthState(data.admin);
+            } else {
+                localStorage.removeItem('cortex_admin_token');
+                setAuthState(null);
+            }
+        } catch {
+            setAuthState(null);
+        }
     }
 
     // ==========================================
@@ -635,12 +736,18 @@
                     <td>${formatDate(client.created_at)}</td>
                     <td class="text-right">
                         <div class="table-actions">
-                            <button class="btn-xs" onclick="window.app.openIssueForClient('${client.id}')" title="Issue License Key">+ Key</button>
-                            <button class="btn-xs" onclick="window.app.openEditClient('${client.id}')" title="Edit Client">Edit</button>
-                            <button class="btn-xs" onclick="window.app.toggleClientStatus('${client.id}', '${client.status === 'active' ? 'suspended' : 'active'}')">
-                                ${client.status === 'active' ? 'Suspend' : 'Activate'}
-                            </button>
-                            <button class="btn-xs" onclick="window.app.deleteClient('${client.id}')" title="Delete Client" style="color: var(--accent-rose);">Delete</button>
+                            ${isAdmin() ? `
+                                <button class="btn-xs" onclick="window.app.openIssueForClient('${client.id}')" title="Issue License Key">+ Key</button>
+                                <button class="btn-xs" onclick="window.app.openEditClient('${client.id}')" title="Edit Client">Edit</button>
+                                <button class="btn-xs" onclick="window.app.toggleClientStatus('${client.id}', '${client.status === 'active' ? 'suspended' : 'active'}')">
+                                    ${client.status === 'active' ? 'Suspend' : 'Activate'}
+                                </button>
+                                <button class="btn-xs" onclick="window.app.deleteClient('${client.id}')" title="Delete Client" style="color: var(--accent-rose);">Delete</button>
+                            ` : `
+                                <button class="btn-xs btn-lock-indicator" onclick="window.app.openLoginModal('Admin Login Required to manage clients')" title="Sign in as Admin to manage">
+                                    🔒 Admin Only
+                                </button>
+                            `}
                         </div>
                     </td>
                 </tr>
@@ -726,12 +833,18 @@
                     <td class="text-right">
                         <div class="table-actions">
                             <button class="btn-xs" onclick="window.app.testInSimulator('${license.license_key}')" title="Test in Simulator">Test</button>
-                            ${license.status === 'active' ? `
-                                <button class="btn-xs" onclick="window.app.revokeLicense('${license.id}')" style="color: var(--accent-rose);">Revoke</button>
+                            ${isAdmin() ? `
+                                ${license.status === 'active' ? `
+                                    <button class="btn-xs" onclick="window.app.revokeLicense('${license.id}')" style="color: var(--accent-rose);">Revoke</button>
+                                ` : `
+                                    <button class="btn-xs" onclick="window.app.updateLicenseStatus('${license.id}', 'active')">Reactivate</button>
+                                `}
+                                <button class="btn-xs" onclick="window.app.deleteLicense('${license.id}')" title="Delete">Delete</button>
                             ` : `
-                                <button class="btn-xs" onclick="window.app.updateLicenseStatus('${license.id}', 'active')">Reactivate</button>
+                                <button class="btn-xs btn-lock-indicator" onclick="window.app.openLoginModal('Admin Login Required to revoke or delete licenses')" title="Sign in as Admin to manage">
+                                    🔒 Admin Only
+                                </button>
                             `}
-                            <button class="btn-xs" onclick="window.app.deleteLicense('${license.id}')" title="Delete">Delete</button>
                         </div>
                     </td>
                 </tr>
@@ -834,6 +947,15 @@
     // Tab 5: Administrator Management
     // ==========================================
     async function loadAdmins() {
+        if (!isAdmin()) {
+            if (elements.adminRestrictedBox) elements.adminRestrictedBox.style.display = 'flex';
+            if (elements.adminManagementPanel) elements.adminManagementPanel.style.display = 'none';
+            return;
+        }
+
+        if (elements.adminRestrictedBox) elements.adminRestrictedBox.style.display = 'none';
+        if (elements.adminManagementPanel) elements.adminManagementPanel.style.display = 'block';
+
         try {
             const res = await apiRequest('/api/admin');
             if (res.success && res.data) {
@@ -841,7 +963,7 @@
                 renderAdminsTable();
             }
         } catch (err) {
-            showToast(err.message, 'error');
+            console.warn('Could not load admins:', err);
         }
     }
 
@@ -853,11 +975,15 @@
             return;
         }
 
+        const isSuperAdmin = state.currentUser && state.currentUser.role === 'super_admin';
+
         elements.adminsTableBody.innerHTML = state.admins.map(admin => {
             const isSuper = admin.role === 'super_admin';
+            const isSelf = state.currentUser && admin.id === state.currentUser.id;
+
             return `
                 <tr>
-                    <td><strong>${escapeHtml(admin.name)}</strong></td>
+                    <td><strong>${escapeHtml(admin.name)}</strong> ${isSelf ? '<span class="badge-mini">You</span>' : ''}</td>
                     <td><code>${escapeHtml(admin.email)}</code></td>
                     <td>
                         <span class="${isSuper ? 'badge-accent' : 'tag-meta'}">
@@ -866,9 +992,9 @@
                     </td>
                     <td>${formatDate(admin.created_at)}</td>
                     <td class="text-right">
-                        ${state.admins.length > 1 ? `
+                        ${isSuperAdmin && !isSelf && state.admins.length > 1 ? `
                             <button class="btn-xs" onclick="window.app.deleteAdmin('${admin.id}')" style="color: var(--accent-rose);">Delete</button>
-                        ` : '<span class="tag-meta">Primary Admin</span>'}
+                        ` : (isSuper ? '<span class="tag-meta">Primary Admin</span>' : '<span class="tag-meta">Active</span>')}
                     </td>
                 </tr>
             `;
@@ -958,6 +1084,33 @@
         closeModals() {
             document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('open'));
         },
+        openLoginModal(notice = '') {
+            if (notice) showToast(notice, 'info');
+            if (elements.modalAdminLogin) {
+                elements.modalAdminLogin.classList.add('open');
+                if (elements.loginEmail) setTimeout(() => elements.loginEmail.focus(), 100);
+            }
+        },
+        logout() {
+            localStorage.removeItem('cortex_admin_token');
+            setAuthState(null);
+            showToast('Signed out. You are now in Viewer mode (Read-Only).', 'info');
+            if (state.currentTab === 'admins') {
+                switchTab('overview');
+            }
+        },
+        toggleAuthModal() {
+            if (isAdmin()) {
+                if (confirm(`You are signed in as ${state.currentUser?.name || 'Admin'} (${state.currentUser?.role}). Sign out to Viewer mode?`)) {
+                    window.app.logout();
+                }
+            } else {
+                window.app.openLoginModal();
+            }
+        },
+        isAdmin() {
+            return isAdmin();
+        },
         copyKey(key) {
             navigator.clipboard.writeText(key).then(() => {
                 showToast(`License key copied: ${key}`, 'success');
@@ -971,10 +1124,18 @@
             executeSimulatorPing();
         },
         openIssueForClient(clientId) {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to issue licenses');
+                return;
+            }
             elements.issueClientId.value = clientId;
             elements.modalIssueLicense.classList.add('open');
         },
         openEditClient(clientId) {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to edit client details');
+                return;
+            }
             const client = state.clients.find(c => c.id === clientId);
             if (!client) return;
             document.getElementById('edit-client-id').value = client.id;
@@ -986,6 +1147,10 @@
             elements.modalEditClient.classList.add('open');
         },
         async toggleClientStatus(clientId, newStatus) {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to change client status');
+                return;
+            }
             try {
                 const res = await apiRequest(`/api/clients/${clientId}/status`, 'PATCH', { status: newStatus });
                 if (res.success) {
@@ -1000,6 +1165,10 @@
             }
         },
         async deleteClient(clientId) {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to delete clients');
+                return;
+            }
             if (!confirm('Are you sure you want to delete this client? All associated licenses will be removed!')) return;
             try {
                 const res = await apiRequest(`/api/clients/${clientId}`, 'DELETE');
@@ -1015,6 +1184,10 @@
             }
         },
         async revokeLicense(licenseId) {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to revoke licenses');
+                return;
+            }
             if (!confirm('Revoke this license? The Cortex client will be blocked immediately upon next ping!')) return;
             try {
                 const res = await apiRequest(`/api/license/${licenseId}/revoke`, 'PATCH');
@@ -1030,6 +1203,10 @@
             }
         },
         async updateLicenseStatus(licenseId, status) {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to modify license status');
+                return;
+            }
             try {
                 const res = await apiRequest(`/api/license/${licenseId}/status`, 'PATCH', { status });
                 if (res.success) {
@@ -1044,6 +1221,10 @@
             }
         },
         async deleteLicense(licenseId) {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to delete licenses');
+                return;
+            }
             if (!confirm('Permanently delete this license key?')) return;
             try {
                 const res = await apiRequest(`/api/license/${licenseId}`, 'DELETE');
@@ -1059,6 +1240,10 @@
             }
         },
         async deleteAdmin(adminId) {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Super Admin login required to delete administrators');
+                return;
+            }
             if (!confirm('Delete this administrator account?')) return;
             try {
                 const res = await apiRequest(`/api/admin/${adminId}`, 'DELETE');
@@ -1175,10 +1360,83 @@
         if (elements.logSearchInput) elements.logSearchInput.addEventListener('input', renderLogsTable);
         if (elements.btnRefreshLogs) elements.btnRefreshLogs.addEventListener('click', loadLogs);
 
-        // Modal Open Triggers
-        elements.btnOpenAddClient.addEventListener('click', () => elements.modalAddClient.classList.add('open'));
-        elements.btnOpenIssueLicense.addEventListener('click', () => elements.modalIssueLicense.classList.add('open'));
-        elements.btnOpenAddAdmin.addEventListener('click', () => elements.modalAddAdmin.classList.add('open'));
+        // Header auth button (Login / Logout toggle)
+        if (elements.btnHeaderAuth) {
+            elements.btnHeaderAuth.addEventListener('click', () => {
+                if (isAdmin()) {
+                    window.app.logout();
+                } else {
+                    window.app.openLoginModal();
+                }
+            });
+        }
+
+        // Modal Open Triggers (with Admin Guard)
+        elements.btnOpenAddClient.addEventListener('click', () => {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to register new clients');
+                return;
+            }
+            elements.modalAddClient.classList.add('open');
+        });
+
+        elements.btnOpenIssueLicense.addEventListener('click', () => {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Admin Login Required to issue license keys');
+                return;
+            }
+            elements.modalIssueLicense.classList.add('open');
+        });
+
+        elements.btnOpenAddAdmin.addEventListener('click', () => {
+            if (!isAdmin()) {
+                window.app.openLoginModal('Super Admin login required to add administrators');
+                return;
+            }
+            elements.modalAddAdmin.classList.add('open');
+        });
+
+        // Form: Admin Login
+        if (elements.formAdminLogin) {
+            elements.formAdminLogin.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = elements.loginEmail.value.trim();
+                const password = elements.loginPassword.value;
+                if (!email || !password) {
+                    showToast('Email and password required', 'error');
+                    return;
+                }
+
+                if (elements.btnSubmitLogin) {
+                    elements.btnSubmitLogin.disabled = true;
+                    elements.btnSubmitLogin.textContent = 'Authenticating...';
+                }
+
+                try {
+                    const res = await apiRequest('/api/admin/login', 'POST', { email, password });
+                    if (res.success && res.token) {
+                        localStorage.setItem('cortex_admin_token', res.token);
+                        setAuthState(res.admin);
+                        elements.modalAdminLogin.classList.remove('open');
+                        elements.formAdminLogin.reset();
+                        showToast(`Welcome, ${res.admin.name || 'Admin'}! Management access unlocked.`, 'success');
+
+                        await loadClients();
+                        await loadLicenses();
+                        if (state.currentTab === 'admins') await loadAdmins();
+                    } else {
+                        showToast(res.message || 'Authentication failed', 'error');
+                    }
+                } catch (err) {
+                    showToast(err.message || 'Login failed', 'error');
+                } finally {
+                    if (elements.btnSubmitLogin) {
+                        elements.btnSubmitLogin.disabled = false;
+                        elements.btnSubmitLogin.textContent = 'Sign In & Unlock';
+                    }
+                }
+            });
+        }
 
         // Validity Presets in Issue License Modal
         document.querySelectorAll('input[name="validity_preset"]').forEach(radio => {
@@ -1328,10 +1586,13 @@
     // Initialize App
     async function init() {
         setupEventListeners();
+        await checkAuthSession();
         await loadOverview();
         await loadClients();
         await loadLicenses();
-        await loadAdmins();
+        if (isAdmin()) {
+            await loadAdmins();
+        }
     }
 
     init();

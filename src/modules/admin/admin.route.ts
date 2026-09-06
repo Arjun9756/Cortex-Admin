@@ -1,13 +1,20 @@
 import { Router } from 'express';
 import { AdminController } from './admin.controller.js';
+import { requireAdmin, requireSuperAdmin } from '../../middleware/auth.middleware.js';
 
 const router = Router();
 
+// Public authentication endpoint
 router.post('/login', AdminController.login);
-router.get('/', AdminController.getAll);
-router.post('/', AdminController.create);
-router.get('/:id', AdminController.getById);
-router.put('/:id', AdminController.update);
-router.delete('/:id', AdminController.delete);
+
+// Session verification
+router.get('/me', requireAdmin, AdminController.getMe);
+
+// Admin roster & management
+router.get('/', requireAdmin, AdminController.getAll);
+router.post('/', requireSuperAdmin, AdminController.create);
+router.get('/:id', requireAdmin, AdminController.getById);
+router.put('/:id', requireSuperAdmin, AdminController.update);
+router.delete('/:id', requireSuperAdmin, AdminController.delete);
 
 export default router;
