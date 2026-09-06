@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import fs from 'fs';
 import env from './config/env.config.js';
 import { initDatabase } from './db/db.init.js';
 
@@ -41,8 +42,22 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     next();
 });
 
-// Determine public directory path (cwd fallback for Vercel)
-const publicPath = path.join(process.cwd(), 'public');
+// Determine public directory path reliably (works from project root, /src, or Vercel serverless)
+function resolvePublicPath(): string {
+    const candidates = [
+        path.join(process.cwd(), 'public'),
+        path.join(__dirname, '..', 'public'),
+        path.join(__dirname, 'public')
+    ];
+    for (const cand of candidates) {
+        if (fs.existsSync(path.join(cand, 'index.html'))) {
+            return cand;
+        }
+    }
+    return candidates[0] || path.join(process.cwd(), 'public');
+}
+
+const publicPath = resolvePublicPath();
 app.use(express.static(publicPath));
 
 // Lazy Database Initializer for Serverless / Warm instances
@@ -96,11 +111,14 @@ app.get(['/api/health', '/health'], (req: Request, res: Response) => {
 
 // SPA Fallback: Serve index.html for any unmatched non-API requests (Express 5 compatible)
 app.use((req: Request, res: Response) => {
-    if (req.url.startsWith('/api/')) {
+    if (req.url === '/api' || req.url.startsWith('/api/') || req.url.startsWith('/api?')) {
         return res.status(404).json({ success: false, message: 'API Route Not Found' });
     }
     const indexPath = path.join(publicPath, 'index.html');
-    res.sendFile(indexPath);
+    if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+    }
+    res.status(404).send('Not Found');
 });
 
 // Global Error Handler
