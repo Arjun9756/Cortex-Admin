@@ -26,7 +26,15 @@ const env = {
     LICENSE_PING_INTERVAL_HOURS: parseInt(process.env.LICENSE_PING_INTERVAL_HOURS || '6'),
 
     ADMIN_DEFAULT_EMAIL: process.env.ADMIN_DEFAULT_EMAIL || 'admin@cortex.com',
-    ADMIN_DEFAULT_PASSWORD: process.env.ADMIN_DEFAULT_PASSWORD || 'Admin@Cortex2026'
+    ADMIN_DEFAULT_PASSWORD: process.env.ADMIN_DEFAULT_PASSWORD || 'Admin@Cortex2026',
+
+    GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID || '',
+    GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET || '',
+    SLACK_CLIENT_ID: process.env.SLACK_CLIENT_ID || '',
+    SLACK_CLIENT_SECRET: process.env.SLACK_CLIENT_SECRET || '',
+    JIRA_CLIENT_ID: process.env.JIRA_CLIENT_ID || '',
+    JIRA_CLIENT_SECRET: process.env.JIRA_CLIENT_SECRET || '',
+    ADMIN_PUBLIC_URL: process.env.ADMIN_PUBLIC_URL || 'https://cortex-admin-two.vercel.app'
 }
 
 export default Object.freeze(env)

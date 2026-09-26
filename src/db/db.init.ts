@@ -78,6 +78,27 @@ export async function initDatabase() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
+        // 5. Client Connectors Table (Tracks OAuth tools connected by self-hosted clients)
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS client_connectors (
+                id VARCHAR(32) PRIMARY KEY,
+                client_id VARCHAR(32) NOT NULL,
+                license_key VARCHAR(68) NOT NULL,
+                provider ENUM('github', 'slack', 'jira') NOT NULL,
+                status ENUM('connected', 'disconnected', 'needs_reauth') DEFAULT 'connected',
+                account_name VARCHAR(255),
+                account_email VARCHAR(255),
+                account_id VARCHAR(255),
+                scopes JSON,
+                connected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+                UNIQUE KEY uniq_license_provider (license_key, provider),
+                INDEX idx_license (license_key),
+                INDEX idx_client_id (client_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+
         // Sync/Seed default super admin from env
         const adminEmail = (env.ADMIN_DEFAULT_EMAIL || 'admin@cortex.com').toLowerCase().trim();
         const passwordHash = hashPassword(env.ADMIN_DEFAULT_PASSWORD || 'Admin@Cortex2026');

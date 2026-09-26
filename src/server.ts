@@ -9,6 +9,7 @@ import clientRoutes from './modules/client/client.route.js';
 import licenseRoutes from './modules/license/license.route.js';
 import adminRoutes from './modules/admin/admin.route.js';
 import analyticsRoutes from './modules/analytics/analytics.route.js';
+import { oauthRouter } from './modules/oauth/oauth.route.js';
 
 const __filename = import.meta.filename;
 const __dirname = path.dirname(__filename);
@@ -92,11 +93,13 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/license', licenseRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/oauth', oauthRouter);
 
 app.use('/clients', clientRoutes);
 app.use('/license', licenseRoutes);
 app.use('/admin', adminRoutes);
 app.use('/analytics', analyticsRoutes);
+app.use('/oauth', oauthRouter);
 
 // System Health Endpoint
 app.get(['/api/health', '/health'], (req: Request, res: Response) => {
