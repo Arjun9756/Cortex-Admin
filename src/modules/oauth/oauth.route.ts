@@ -125,7 +125,7 @@ oauthRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
             const botScopes = encodeURIComponent('channels:read,groups:read,users:read,users:read.email,team:read');
             redirectUrl = `https://slack.com/oauth/v2/authorize?client_id=${encodeURIComponent(clientId)}&scope=${botScopes}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}`;
         } else if (provider === 'jira') {
-            const scopes = encodeURIComponent('read:jira-work read:jira-user offline_access read:me');
+            const scopes = encodeURIComponent('read:jira-work read:jira-user');
             redirectUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${encodeURIComponent(clientId)}&scope=${scopes}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}&response_type=code&prompt=consent`;
         }
 
