@@ -23,11 +23,15 @@ export const LicenseController = {
 
     async create(req: Request, res: Response) {
         try {
-            const { client_id, validity_days } = req.body;
+            const { client_id, validity_days, max_machines } = req.body;
             if (!client_id) {
                 return res.status(400).json({ success: false, message: 'client_id is required' });
             }
-            const license = await LicenseService.createLicense(client_id, validity_days ? parseInt(validity_days) : undefined);
+            const license = await LicenseService.createLicense(
+                client_id,
+                validity_days ? parseInt(validity_days) : undefined,
+                max_machines ? parseInt(max_machines) : undefined
+            );
             res.status(201).json({ success: true, data: license, message: 'License key issued successfully' });
         } catch (error: any) {
             res.status(400).json({ success: false, message: error.message });
@@ -92,6 +96,97 @@ export const LicenseController = {
             const id = req.params.id as string;
             await LicenseService.deleteLicense(id);
             res.status(200).json({ success: true, message: 'License deleted successfully' });
+        } catch (error: any) {
+            res.status(400).json({ success: false, message: error.message });
+        }
+    },
+
+    async update(req: Request, res: Response) {
+        try {
+            const id = req.params.id as string;
+            const license = await LicenseService.updateLicense(id, req.body);
+            res.status(200).json({ success: true, data: license, message: 'License updated successfully' });
+        } catch (error: any) {
+            res.status(400).json({ success: false, message: error.message });
+        }
+    },
+
+    async updateMaxMachines(req: Request, res: Response) {
+        try {
+            const id = req.params.id as string;
+            const { max_machines } = req.body;
+            if (!max_machines || isNaN(parseInt(max_machines))) {
+                return res.status(400).json({ success: false, message: 'max_machines must be a valid number' });
+            }
+            const license = await LicenseService.updateMaxMachines(id, parseInt(max_machines));
+            res.status(200).json({ success: true, data: license, message: `Machine limit updated to ${max_machines}` });
+        } catch (error: any) {
+            res.status(400).json({ success: false, message: error.message });
+        }
+    },
+
+    // ─── HWID Management Endpoints ──────────────────────────────────────────
+
+    async getHwids(req: Request, res: Response) {
+        try {
+            const id = req.params.id as string;
+            const hwids = await LicenseService.getHwids(id);
+            res.status(200).json({ success: true, data: hwids });
+        } catch (error: any) {
+            res.status(404).json({ success: false, message: error.message });
+        }
+    },
+
+    async getAllHwidsGlobal(req: Request, res: Response) {
+        try {
+            const hwids = await LicenseService.getAllHwidsGlobal();
+            res.status(200).json({ success: true, data: hwids });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    async addHwid(req: Request, res: Response) {
+        try {
+            const id = req.params.id as string;
+            const { hwid, label } = req.body;
+            if (!hwid) return res.status(400).json({ success: false, message: 'hwid is required' });
+            const result = await LicenseService.addHwid(id, hwid, label);
+            res.status(201).json({ success: true, ...result });
+        } catch (error: any) {
+            res.status(400).json({ success: false, message: error.message });
+        }
+    },
+
+    async removeHwid(req: Request, res: Response) {
+        try {
+            const id = req.params.id as string;
+            const hwid = String(req.params.hwid || '');
+            const result = await LicenseService.removeHwid(id, decodeURIComponent(hwid));
+            res.status(200).json({ success: true, ...result });
+        } catch (error: any) {
+            res.status(400).json({ success: false, message: error.message });
+        }
+    },
+
+    async blockHwid(req: Request, res: Response) {
+        try {
+            const id = req.params.id as string;
+            const hwid = String(req.params.hwid || '');
+            const rawVal = req.body.blocked !== undefined ? req.body.blocked : req.body.is_blocked;
+            const isBlocked = rawVal === true || rawVal === 'true' || rawVal === 1 || rawVal === '1';
+            const result = await LicenseService.blockHwid(id, decodeURIComponent(hwid), isBlocked);
+            res.status(200).json({ success: true, ...result });
+        } catch (error: any) {
+            res.status(400).json({ success: false, message: error.message });
+        }
+    },
+
+    async resetHwids(req: Request, res: Response) {
+        try {
+            const id = req.params.id as string;
+            const result = await LicenseService.resetHwids(id);
+            res.status(200).json({ success: true, ...result });
         } catch (error: any) {
             res.status(400).json({ success: false, message: error.message });
         }

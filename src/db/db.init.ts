@@ -8,7 +8,7 @@ export async function initDatabase() {
     let connection;
     try {
         connection = await pool.getConnection();
-        console.log('🔄 Checking & initializing MySQL database schema in:', env.AIVEN_SQL_DATABASE);
+        console.log('🔧 Checking & initializing MySQL database schema in:', env.AIVEN_SQL_DATABASE);
 
         // 1. Clients Table
         await connection.query(`
@@ -26,7 +26,7 @@ export async function initDatabase() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
-        // 2. Licenses Table
+        // 2. Licenses Table (max_machines: how many unique HWIDs are allowed)
         await connection.query(`
             CREATE TABLE IF NOT EXISTS licenses (
                 id VARCHAR(32) PRIMARY KEY,
@@ -37,6 +37,7 @@ export async function initDatabase() {
                 expiry_date DATETIME NOT NULL,
                 last_validated_at DATETIME,
                 max_pings_per_day INT DEFAULT 4,
+                max_machines INT DEFAULT 1,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
                 INDEX idx_license_key (license_key),
                 INDEX idx_status (status),
@@ -44,7 +45,51 @@ export async function initDatabase() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
-        // 3. Usage Logs Table (client_id & license_id nullable so failed pings from unauthorized keys can be recorded safely)
+        // Add max_machines column if it doesn't exist (robust migration for MySQL 8.0)
+        try {
+            const [cols]: any = await connection.query(`
+                SELECT COLUMN_NAME 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                  AND TABLE_NAME = 'licenses' 
+                  AND COLUMN_NAME = 'max_machines'
+            `);
+            if (!cols || cols.length === 0) {
+                await connection.query(`ALTER TABLE licenses ADD COLUMN max_machines INT DEFAULT 1`);
+                console.log('✅ Successfully added max_machines column to licenses table');
+            }
+        } catch (colErr: any) {
+            console.error('⚠️ Could not alter licenses table for max_machines:', colErr.message);
+        }
+
+        // 3. License HWIDs Table — stores all registered hardware IDs per license
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS license_hwids (
+                id VARCHAR(32) PRIMARY KEY,
+                license_id VARCHAR(32) NOT NULL,
+                hwid VARCHAR(512) NOT NULL,
+                label VARCHAR(255),
+                first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at TIMESTAMP NULL DEFAULT NULL,
+                is_blocked TINYINT(1) DEFAULT 0,
+                FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE,
+                UNIQUE KEY uniq_license_hwid (license_id, hwid),
+                INDEX idx_license_id (license_id),
+                INDEX idx_hwid (hwid(128))
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+
+        // Migration: Ensure last_seen_at is nullable and DOES NOT mutate on admin row updates
+        try {
+            await connection.query(`
+                ALTER TABLE license_hwids 
+                MODIFY COLUMN last_seen_at TIMESTAMP NULL DEFAULT NULL
+            `);
+        } catch (hwidColErr: any) {
+            console.error('⚠️ Could not alter license_hwids last_seen_at column:', hwidColErr.message);
+        }
+
+        // 4. Usage Logs Table (client_id & license_id nullable so failed pings from unauthorized keys can be recorded safely)
         await connection.query(`
             CREATE TABLE IF NOT EXISTS usage_logs (
                 id VARCHAR(32) PRIMARY KEY,
@@ -65,7 +110,7 @@ export async function initDatabase() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
-        // 4. Admin Users Table
+        // 5. Admin Users Table
         await connection.query(`
             CREATE TABLE IF NOT EXISTS admin_users (
                 id VARCHAR(32) PRIMARY KEY,
@@ -78,7 +123,7 @@ export async function initDatabase() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
-        // 5. Client Connectors Table (Tracks OAuth tools connected by self-hosted clients)
+        // 6. Client Connectors Table (Tracks OAuth tools connected by self-hosted clients)
         await connection.query(`
             CREATE TABLE IF NOT EXISTS client_connectors (
                 id VARCHAR(32) PRIMARY KEY,
@@ -108,14 +153,12 @@ export async function initDatabase() {
         );
 
         if (existing && existing.length > 0) {
-            // Update password hash & ensure super_admin role whenever env is updated
             await connection.query(
                 'UPDATE admin_users SET password_hash = ?, role = ? WHERE email = ?',
                 [passwordHash, 'super_admin', adminEmail]
             );
             console.log(`✅ Default Super Admin synchronized with .env: ${adminEmail}`);
         } else {
-            // Create super admin if it does not exist
             const adminId = snowflake.nextID().toString();
             await connection.query(
                 'INSERT INTO admin_users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',

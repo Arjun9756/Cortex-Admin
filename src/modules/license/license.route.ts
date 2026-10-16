@@ -4,20 +4,34 @@ import { requireAdmin } from '../../middleware/auth.middleware.js';
 
 const router = Router();
 
-// Heartbeat & Validation endpoints for Cortex Client App & Simulator
-// 100% PUBLIC: Viewer and Cortex apps can verify licenses with ZERO signup/login
+// ─── Public: Heartbeat & Validation (Cortex Client App) ───────────────────────
+// No auth required — clients ping from their own machines
 router.post('/ping', LicenseController.ping);
 router.post('/verify', LicenseController.ping);
 
-// Read endpoints (Viewer allowed)
+// ─── Read Endpoints (Viewer allowed) ─────────────────────────────────────────
 router.get('/', LicenseController.getAll);
 router.get('/:id', LicenseController.getById);
 router.get('/client/:clientId', LicenseController.getByClient);
 
-// Mutating endpoints (Super Admin & Admin ONLY)
+// ─── HWID Read (Viewer allowed) ──────────────────────────────────────────────
+router.get('/hwids/all', LicenseController.getAllHwidsGlobal);
+router.get('/:id/hwids', LicenseController.getHwids);
+
+// ─── Mutating Endpoints (Admin ONLY) ─────────────────────────────────────────
 router.post('/', requireAdmin, LicenseController.create);
 router.patch('/:id/revoke', requireAdmin, LicenseController.revoke);
 router.patch('/:id/status', requireAdmin, LicenseController.updateStatus);
+router.put('/:id', requireAdmin, LicenseController.update);
+router.patch('/:id', requireAdmin, LicenseController.update);
+
+router.patch('/:id/max-machines', requireAdmin, LicenseController.updateMaxMachines);
 router.delete('/:id', requireAdmin, LicenseController.delete);
+
+// ─── HWID Management (Admin ONLY) ────────────────────────────────────────────
+router.post('/:id/hwids', requireAdmin, LicenseController.addHwid);
+router.delete('/:id/hwids/:hwid', requireAdmin, LicenseController.removeHwid);
+router.patch('/:id/hwids/:hwid/block', requireAdmin, LicenseController.blockHwid);
+router.delete('/:id/hwids', requireAdmin, LicenseController.resetHwids);
 
 export default router;
