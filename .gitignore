@@ -5,3 +5,4 @@ node_modules
 ca.pem
 dist
 *.log
+scripts/*.mjs

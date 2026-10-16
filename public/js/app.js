@@ -37,10 +37,25 @@
             .replace(/'/g, '&#039;');
     }
 
+    function parseUTCDate(dateStr) {
+        if (!dateStr) return null;
+        let s = String(dateStr).trim();
+        if (!s) return null;
+        if (s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)) {
+            const d = new Date(s);
+            return isNaN(d.getTime()) ? null : d;
+        }
+        if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(s)) {
+            s = s.replace(' ', 'T') + 'Z';
+        }
+        const d = new Date(s);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
     function formatDate(dateStr) {
         if (!dateStr) return '<span style="color: var(--text-muted);">N/A</span>';
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return String(dateStr);
+        const d = parseUTCDate(dateStr);
+        if (!d) return String(dateStr);
         const day = String(d.getDate()).padStart(2, '0');
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const month = months[d.getMonth()];
@@ -54,9 +69,10 @@
 
     function formatRelative(dateStr) {
         if (!dateStr) return '<span style="color: var(--text-muted);">Never</span>';
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return '';
+        const d = parseUTCDate(dateStr);
+        if (!d) return '';
         const diff = Date.now() - d.getTime();
+        if (diff < 0) return '<span style="color: var(--emerald);">Active Now</span>';
         const mins = Math.floor(diff / 60000);
         if (mins < 1) return '<span style="color: var(--emerald);">Just now</span>';
         if (mins < 60) return `${mins}m ago`;
@@ -74,14 +90,15 @@
             </span>`;
         }
 
-        const d = new Date(lastSeenStr);
-        if (isNaN(d.getTime())) {
+        const d = parseUTCDate(lastSeenStr);
+        if (!d) {
             return `<span style="font-size: 11.5px; color: var(--text-muted);">---</span>`;
         }
 
         const diffMs = Date.now() - d.getTime();
-        const mins = Math.floor(diffMs / 60000);
         const exactDate = formatDate(lastSeenStr);
+        const effectiveDiffMs = Math.max(0, diffMs);
+        const mins = Math.floor(effectiveDiffMs / 60000);
 
         if (mins < 15) {
             const label = mins < 1 ? 'Active Now' : `${mins}m ago`;
@@ -115,8 +132,8 @@
 
     function formatExpiryCountdown(dateStr) {
         if (!dateStr) return '';
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return '';
+        const d = parseUTCDate(dateStr);
+        if (!d) return '';
         const diff = d.getTime() - Date.now();
         const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
         if (days < 0) return `<span style="color: var(--ruby); font-weight: 500;">Expired (${Math.abs(days)}d ago)</span>`;
@@ -141,15 +158,184 @@
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // MASTER SESSION AUTHENTICATION & ACCESS CONTROL
+    // ─────────────────────────────────────────────────────────────────────────
+    function showAuthGate() {
+        const overlay = document.getElementById('auth-gate-overlay');
+        if (overlay) {
+            overlay.style.display = 'flex';
+            const pwdInput = document.getElementById('login-password');
+            if (pwdInput) {
+                pwdInput.value = '';
+                pwdInput.focus();
+            }
+            const errBanner = document.getElementById('login-error-banner');
+            if (errBanner) {
+                errBanner.style.display = 'none';
+                errBanner.textContent = '';
+            }
+        }
+    }
+
+    function hideAuthGate() {
+        const overlay = document.getElementById('auth-gate-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+    }
+
+    function updateOperatorProfile(admin) {
+        if (!admin) return;
+        const nameEl = document.getElementById('operator-name');
+        const emailEl = document.getElementById('operator-email');
+        const initialsEl = document.getElementById('operator-initials');
+
+        if (nameEl && admin.name) nameEl.textContent = admin.name;
+        if (emailEl && admin.email) emailEl.textContent = admin.email;
+        if (initialsEl) {
+            const initials = (admin.name || 'MA')
+                .split(' ')
+                .map(n => n[0])
+                .join('')
+                .substring(0, 2)
+                .toUpperCase() || 'MA';
+            initialsEl.textContent = initials;
+        }
+    }
+
+    async function checkAuthSession() {
+        const token = localStorage.getItem('cortex_admin_token');
+        if (!token) {
+            showAuthGate();
+            return false;
+        }
+
+        try {
+            const res = await fetch('/api/admin/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
+                }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success && data.admin) {
+                    updateOperatorProfile(data.admin);
+                    hideAuthGate();
+                    return true;
+                }
+            }
+        } catch (err) {
+            console.error('Session verification error:', err);
+        }
+
+        // Invalid or expired session
+        localStorage.removeItem('cortex_admin_token');
+        showAuthGate();
+        return false;
+    }
+
+    async function handleLoginSubmit(e) {
+        if (e) e.preventDefault();
+        const email = document.getElementById('login-email')?.value.trim();
+        const password = document.getElementById('login-password')?.value;
+        const submitBtn = document.getElementById('btn-login-submit');
+        const errorBanner = document.getElementById('login-error-banner');
+
+        if (!email || !password) {
+            if (errorBanner) {
+                errorBanner.textContent = 'Please enter administrator email and master password.';
+                errorBanner.style.display = 'block';
+            }
+            return;
+        }
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Authenticating...';
+        }
+        if (errorBanner) errorBanner.style.display = 'none';
+
+        try {
+            const res = await fetch('/api/admin/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success && data.token) {
+                localStorage.setItem('cortex_admin_token', data.token);
+                updateOperatorProfile(data.admin);
+                hideAuthGate();
+                showToast('Console unlocked. Master session active.', 'success');
+                await Promise.all([
+                    loadLicenses(),
+                    loadClients(),
+                    loadGlobalDevices(),
+                    loadLogs()
+                ]);
+            } else {
+                if (errorBanner) {
+                    errorBanner.textContent = data.message || 'Access Denied: Invalid administrator credentials.';
+                    errorBanner.style.display = 'block';
+                }
+                const pwdInput = document.getElementById('login-password');
+                if (pwdInput) {
+                    pwdInput.value = '';
+                    pwdInput.focus();
+                }
+            }
+        } catch (err) {
+            if (errorBanner) {
+                errorBanner.textContent = 'Connection to authorization server failed.';
+                errorBanner.style.display = 'block';
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Authenticate & Unlock Console';
+            }
+        }
+    }
+
+    function handleLogout() {
+        localStorage.removeItem('cortex_admin_token');
+        state.licenses = [];
+        state.clients = [];
+        state.globalDevices = [];
+        state.logs = [];
+
+        // Clear UI tables so confidential data is not visible behind modal
+        renderLicensesTable();
+        renderClientsTable();
+        renderGlobalDevicesTable();
+        renderLogsTable();
+
+        showAuthGate();
+        showToast('Console session locked. Re-authentication required.', 'info');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // SECURE API CLIENT
     // ─────────────────────────────────────────────────────────────────────────
     async function apiRequest(endpoint, method = 'GET', body = null) {
-        const token = localStorage.getItem('cortex_admin_token') || 'master-token';
+        const token = localStorage.getItem('cortex_admin_token');
+        if (!token && !endpoint.includes('/api/admin/login')) {
+            showAuthGate();
+            return { ok: false, status: 401, success: false, message: 'Authentication required' };
+        }
+
         const headers = {
             'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Accept': 'application/json'
         };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
 
         const config = { method, headers };
         if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
@@ -158,6 +344,12 @@
 
         try {
             const res = await fetch(endpoint, config);
+            if (res.status === 401) {
+                localStorage.removeItem('cortex_admin_token');
+                showAuthGate();
+                showToast('Master session expired. Re-authentication required.', 'error');
+                return { ok: false, status: 401, success: false, message: 'Session expired' };
+            }
             const data = await res.json().catch(() => ({}));
             return { ok: res.ok, status: res.status, ...data };
         } catch (err) {
@@ -287,10 +479,12 @@
 
         tbody.innerHTML = recent.map(log => {
             const isSuccess = log.status === 'success';
+            const logTimestamp = log.created_at || log.timestamp;
+            const logAction = log.action_type || log.action || 'ping';
             return `
                 <tr>
                     <td>
-                        <span style="font-weight: 500; color: var(--text-white);">${escapeHtml(log.action || 'ping')}</span>
+                        <span style="font-weight: 500; color: var(--text-white);">${escapeHtml(logAction)}</span>
                     </td>
                     <td>
                         <span class="status-pill ${isSuccess ? 'active' : 'revoked'}" style="font-size: 10.5px; padding: 1px 6px;">
@@ -305,7 +499,7 @@
                         </div>
                     </td>
                     <td>
-                        <span style="font-size: 11px; color: var(--text-secondary);">${formatRelative(log.timestamp)}</span>
+                        <span style="font-size: 11px; color: var(--text-secondary);">${formatRelative(logTimestamp)}</span>
                     </td>
                 </tr>
             `;
@@ -847,10 +1041,11 @@
         if (searchInput) {
             filtered = filtered.filter(l => {
                 const key = (l.license_key || '').toLowerCase();
-                const reason = (l.reason || '').toLowerCase();
+                const reason = (getLogReason(l) || '').toLowerCase();
                 const ip = (l.ip_address || '').toLowerCase();
                 const org = (l.org_name || '').toLowerCase();
-                return key.includes(searchInput) || reason.includes(searchInput) || ip.includes(searchInput) || org.includes(searchInput);
+                const action = (l.action_type || l.action || '').toLowerCase();
+                return key.includes(searchInput) || reason.includes(searchInput) || ip.includes(searchInput) || org.includes(searchInput) || action.includes(searchInput);
             });
         }
 
@@ -869,13 +1064,17 @@
 
         tbody.innerHTML = filtered.map(log => {
             const isSuccess = log.status === 'success';
+            const logTimestamp = log.created_at || log.timestamp;
+            const logAction = log.action_type || log.action || 'ping';
+            const logReason = getLogReason(log);
+
             return `
                 <tr>
                     <td>
-                        <span style="font-size: 11.5px; font-family: var(--font-mono); color: var(--text-secondary);">${formatDate(log.timestamp)}</span>
+                        <span style="font-size: 11.5px; font-family: var(--font-mono); color: var(--text-secondary);">${formatDate(logTimestamp)}</span>
                     </td>
                     <td>
-                        <span style="font-size: 12px; font-weight: 500; color: var(--text-white);">${escapeHtml(log.action || 'ping')}</span>
+                        <span style="font-size: 12px; font-weight: 500; color: var(--text-white);">${escapeHtml(logAction)}</span>
                     </td>
                     <td>
                         <span class="status-pill ${isSuccess ? 'active' : 'revoked'}" style="font-size: 10.5px; padding: 1px 6px;">
@@ -893,7 +1092,7 @@
                         <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${escapeHtml(log.ip_address || '---')}</span>
                     </td>
                     <td>
-                        <span style="font-size: 11.5px; color: ${isSuccess ? 'var(--text-secondary)' : 'var(--ruby)'};">${escapeHtml(log.reason || 'Telemetry validation OK')}</span>
+                        <span style="font-size: 11.5px; color: ${isSuccess ? 'var(--text-secondary)' : 'var(--ruby)'};">${escapeHtml(logReason)}</span>
                     </td>
                     <td class="align-right">
                         <button class="btn btn-secondary btn-sm" onclick="window.app.inspectLogPayload('${log.id}')">
@@ -905,13 +1104,28 @@
         }).join('');
     }
 
+    function getLogReason(log) {
+        if (!log) return '';
+        if (log.reason) return log.reason;
+        if (log.metadata) {
+            let meta = log.metadata;
+            if (typeof meta === 'string') {
+                try { meta = JSON.parse(meta); } catch (_) {}
+            }
+            if (meta && typeof meta === 'object') {
+                return meta.reason || meta.error || meta.status_detail || (log.status === 'success' ? 'Telemetry validation OK' : 'Verification denied');
+            }
+        }
+        return log.status === 'success' ? 'Telemetry validation OK' : 'Verification denied';
+    }
+
     function inspectLogPayload(logId) {
-        const log = state.logs.find(l => l.id === logId);
+        const log = state.logs.find(l => String(l.id) === String(logId));
         if (!log) return;
         const modal = document.getElementById('modal-log-payload');
         const pre = document.getElementById('log-json-modal-content');
         if (pre) {
-            let payloadObj = log.request_payload;
+            let payloadObj = log.metadata || log.request_payload;
             if (typeof payloadObj === 'string') {
                 try { payloadObj = JSON.parse(payloadObj); } catch (_) {}
             }
@@ -1307,6 +1521,21 @@
 
         const clientSearchInput = document.getElementById('client-search-input');
         if (clientSearchInput) clientSearchInput.addEventListener('input', renderClientsTable);
+
+        // Master Session Authentication Form & Logout Button
+        const formLogin = document.getElementById('form-admin-login');
+        if (formLogin) {
+            formLogin.addEventListener('submit', handleLoginSubmit);
+        }
+
+        const btnLogout = document.getElementById('btn-logout');
+        if (btnLogout) {
+            btnLogout.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleLogout();
+            });
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1328,6 +1557,12 @@
                 switchTab(currentHashTab);
             }
         });
+
+        // Mandatory Master Session Verification
+        const authenticated = await checkAuthSession();
+        if (!authenticated) {
+            return; // Retain auth gate modal; do not fetch confidential data
+        }
 
         await Promise.all([
             loadLicenses(),
@@ -1351,7 +1586,10 @@
         addManualHwid,
         updateLicenseStatus,
         inspectLogPayload,
-        openEditClientModal
+        openEditClientModal,
+        logout: handleLogout,
+        checkAuthSession,
+        handleLoginSubmit
     };
 
     if (document.readyState === 'loading') {

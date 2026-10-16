@@ -47,13 +47,16 @@
             <div class="sidebar-footer">
                 <div class="operator-card">
                     <div class="operator-avatar">
-                        <span>MA</span>
+                        <span id="operator-initials">MA</span>
                         <div class="operator-pulse"></div>
                     </div>
                     <div class="operator-details">
-                        <span class="operator-title">Master Administrator</span>
-                        <span class="operator-status">Control plane active</span>
+                        <span class="operator-title" id="operator-name">Master Administrator</span>
+                        <span class="operator-status" id="operator-email">admin@cortex.com</span>
                     </div>
+                    <button type="button" class="btn-icon" id="btn-logout" title="Lock Console & Sign Out" onclick="window.app && window.app.logout && window.app.logout()" style="margin-left: auto; color: var(--text-muted); padding: 5px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: var(--canvas); cursor: pointer;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    </button>
                 </div>
             </div>
         </aside>
@@ -704,10 +707,45 @@
         </div>
     </div>
 
+    <!-- Master Authentication Gate (Mandatory Session Shield) -->
+    <div class="auth-gate-overlay" id="auth-gate-overlay" style="display: flex;">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="auth-logo-badge">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                </div>
+                <div class="auth-title">Cortex Control Plane</div>
+                <div class="auth-subtitle">Cryptographic master authentication required to access fleet telemetry.</div>
+            </div>
+
+            <form id="form-admin-login" class="auth-form">
+                <div id="login-error-banner" class="auth-error-banner" style="display: none;"></div>
+
+                <div class="form-group">
+                    <label for="login-email">Administrator Email</label>
+                    <input type="email" id="login-email" value="admin@cortex.com" required class="form-input" placeholder="admin@cortex.com" autocomplete="username">
+                </div>
+
+                <div class="form-group">
+                    <label for="login-password">Master Password</label>
+                    <input type="password" id="login-password" required class="form-input font-mono" placeholder="Master Password" autocomplete="current-password" autofocus>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="btn-login-submit" style="width: 100%; justify-content: center; padding: 10px; margin-top: 6px; font-weight: 600;">
+                    Authenticate &amp; Unlock Console
+                </button>
+            </form>
+
+            <div class="auth-footer-note">
+                <span>Zero Public Access &bull; 256-Bit Cryptographic Session</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Application Script with Cache Buster -->
-    <script src="/js/app.js?v=2.5.0"></script>
+    <script src="/js/app.js?v=3.3.0"></script>
 </body>
 </html>

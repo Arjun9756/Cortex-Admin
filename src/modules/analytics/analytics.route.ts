@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { AnalyticsController } from './analytics.controller.js';
+import { requireAdmin } from '../../middleware/auth.middleware.js';
 
 const router = Router();
+
+router.use(requireAdmin);
 
 router.get('/overview', AnalyticsController.getOverview);
 router.get('/detailed', AnalyticsController.getDetailed);

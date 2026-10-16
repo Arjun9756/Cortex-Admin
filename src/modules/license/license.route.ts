@@ -9,14 +9,14 @@ const router = Router();
 router.post('/ping', LicenseController.ping);
 router.post('/verify', LicenseController.ping);
 
-// ─── Read Endpoints (Viewer allowed) ─────────────────────────────────────────
-router.get('/', LicenseController.getAll);
-router.get('/:id', LicenseController.getById);
-router.get('/client/:clientId', LicenseController.getByClient);
+// ─── Protected Read Endpoints (Admin Authentication Required) ────────────────
+router.get('/', requireAdmin, LicenseController.getAll);
+router.get('/:id', requireAdmin, LicenseController.getById);
+router.get('/client/:clientId', requireAdmin, LicenseController.getByClient);
 
-// ─── HWID Read (Viewer allowed) ──────────────────────────────────────────────
-router.get('/hwids/all', LicenseController.getAllHwidsGlobal);
-router.get('/:id/hwids', LicenseController.getHwids);
+// ─── Protected HWID Read (Admin Authentication Required) ───────────────────────
+router.get('/hwids/all', requireAdmin, LicenseController.getAllHwidsGlobal);
+router.get('/:id/hwids', requireAdmin, LicenseController.getHwids);
 
 // ─── Mutating Endpoints (Admin ONLY) ─────────────────────────────────────────
 router.post('/', requireAdmin, LicenseController.create);

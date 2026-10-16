@@ -1351,3 +1351,98 @@ html, body {
 .toast.success { border-left: 3px solid var(--emerald); }
 .toast.error { border-left: 3px solid var(--ruby); }
 .toast.info { border-left: 3px solid var(--cobalt); }
+
+/* Master Authentication Gate (Mandatory Session Shield) */
+.auth-gate-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 50% 25%, #111827 0%, #07090e 100%);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 420px;
+    background: #0d121c;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(16, 185, 129, 0.08);
+    border-radius: 12px;
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    animation: auth-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes auth-slide-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.auth-logo-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 12px;
+    color: var(--emerald);
+    margin-bottom: 14px;
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.auth-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text-white);
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+}
+
+.auth-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.auth-error-banner {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: var(--ruby);
+    font-size: 12px;
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.auth-footer-note {
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-subtle);
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
