@@ -29,6 +29,12 @@ interface ClaimTicketInfo {
     accountId: string;
     accountName: string;
     accountEmail: string;
+    metadata?: {
+        cloudId?: string;
+        siteName?: string;
+        siteUrl?: string;
+        [key: string]: any;
+    };
     createdAt: number;
 }
 const claimTickets = new Map<string, ClaimTicketInfo>();
@@ -44,6 +50,17 @@ function cleanExpired() {
     }
 }
 setInterval(cleanExpired, 30000);
+
+// Production-grade Dynamic Base URL resolution (Host Header & Proxy Aware)
+function getBaseUrl(req: Request): string {
+    const rawHost = (req.headers['x-forwarded-host'] as string) || req.get('host') || env.ADMIN_PUBLIC_URL || 'admin.cortexco.in';
+    const firstHost = rawHost.split(',')[0] || 'admin.cortexco.in';
+    const host = firstHost.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    const rawProto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+    const firstProto = rawProto.split(',')[0] || 'https';
+    const proto = firstProto.trim();
+    return `${proto}://${host}`;
+}
 
 // Helper to validate license key
 async function validateLicense(licenseKey: string): Promise<{ valid: boolean; clientId?: string; error?: string }> {
@@ -114,7 +131,7 @@ oauthRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
             createdAt: Date.now()
         });
 
-        const baseUrl = env.ADMIN_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+        const baseUrl = getBaseUrl(req);
         const callbackUrl = `${baseUrl}/api/oauth/${provider}/callback`;
 
         let redirectUrl = '';
@@ -125,7 +142,7 @@ oauthRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
             const botScopes = encodeURIComponent('channels:read,groups:read,users:read,users:read.email,team:read');
             redirectUrl = `https://slack.com/oauth/v2/authorize?client_id=${encodeURIComponent(clientId)}&scope=${botScopes}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}`;
         } else if (provider === 'jira') {
-            const scopes = encodeURIComponent('read:jira-work read:jira-user');
+            const scopes = encodeURIComponent('read:jira-work read:jira-user offline_access read:me');
             redirectUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${encodeURIComponent(clientId)}&scope=${scopes}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}&response_type=code&prompt=consent`;
         }
 
@@ -168,7 +185,7 @@ oauthRouter.get('/:provider/callback', async (req: Request, res: Response) => {
 
         authStates.delete(state);
 
-        const baseUrl = env.ADMIN_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+        const baseUrl = getBaseUrl(req);
         const callbackUrl = `${baseUrl}/api/oauth/${provider}/callback`;
 
         // 3. Exchange Code with Provider
@@ -179,6 +196,7 @@ oauthRouter.get('/:provider/callback', async (req: Request, res: Response) => {
         let accountName = 'Connected Account';
         let accountEmail = '';
         let scopes: string[] = [];
+        let ticketMetadata: any = {};
 
         if (provider === 'github') {
             const clientId = env.GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID || '';
@@ -258,6 +276,53 @@ oauthRouter.get('/:provider/callback', async (req: Request, res: Response) => {
                 expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
             }
             scopes = tokenData.scope ? tokenData.scope.split(' ') : [];
+
+            // 1. Fetch user identity profile (/me) for authentic verified email
+            try {
+                const meRes = await fetch('https://api.atlassian.com/me', {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        Accept: 'application/json'
+                    }
+                });
+                if (meRes.ok) {
+                    const meData = (await meRes.json()) as any;
+                    if (meData.email) accountEmail = meData.email;
+                    if (meData.name) accountName = meData.name;
+                    if (meData.account_id) accountId = meData.account_id;
+                }
+            } catch (meErr: any) {
+                console.warn('[OAuthBroker] Could not fetch Atlassian /me user profile:', meErr?.message);
+            }
+
+            // 2. Fetch accessible resources for site and Cloud ID
+            let cloudId = '';
+            let siteName = '';
+            let siteUrl = '';
+            try {
+                const resRes = await fetch('https://api.atlassian.com/oauth/token/accessible-resources', {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        Accept: 'application/json'
+                    }
+                });
+                if (resRes.ok) {
+                    const resources = (await resRes.json()) as any[];
+                    if (resources && resources.length > 0) {
+                        const primary = resources[0];
+                        cloudId = primary.id;
+                        siteName = primary.name || 'Jira Cloud';
+                        siteUrl = primary.url || '';
+                        if (!accountId) accountId = cloudId;
+                        accountName = accountName ? `${accountName} (${siteName})` : siteName;
+                    }
+                }
+            } catch (rErr: any) {
+                console.warn('[OAuthBroker] Could not fetch Atlassian accessible resources:', rErr?.message);
+            }
+
+            if (cloudId) accountId = cloudId;
+            ticketMetadata = { cloudId, siteName, siteUrl };
         }
 
         // 4. Sync status into MySQL client_connectors
@@ -304,6 +369,7 @@ oauthRouter.get('/:provider/callback', async (req: Request, res: Response) => {
             accountId,
             accountName,
             accountEmail,
+            metadata: ticketMetadata,
             createdAt: Date.now()
         });
 
@@ -357,7 +423,9 @@ oauthRouter.post('/claim', async (req: Request, res: Response) => {
             scopes: claimInfo.scopes,
             accountId: claimInfo.accountId,
             accountName: claimInfo.accountName,
-            accountEmail: claimInfo.accountEmail
+            accountEmail: claimInfo.accountEmail,
+            cloudId: claimInfo.metadata?.cloudId || claimInfo.accountId,
+            metadata: claimInfo.metadata || {}
         });
     } catch (err: any) {
         console.error('[OAuthBroker] Claim error:', err);

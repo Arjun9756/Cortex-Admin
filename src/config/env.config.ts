@@ -34,7 +34,7 @@ const env = {
     SLACK_CLIENT_SECRET: process.env.SLACK_CLIENT_SECRET || '',
     JIRA_CLIENT_ID: process.env.JIRA_CLIENT_ID || '',
     JIRA_CLIENT_SECRET: process.env.JIRA_CLIENT_SECRET || '',
-    ADMIN_PUBLIC_URL: process.env.ADMIN_PUBLIC_URL || 'https://cortex-admin-two.vercel.app'
+    ADMIN_PUBLIC_URL: process.env.ADMIN_PUBLIC_URL || 'https://admin.cortexco.in'
 }
 
 export default Object.freeze(env)
