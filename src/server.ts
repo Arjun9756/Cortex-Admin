@@ -103,12 +103,14 @@ app.use('/api/license', licenseRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/oauth', oauthRouter);
+app.use('/api/slack', oauthRouter);
 
 app.use('/clients', clientRoutes);
 app.use('/license', licenseRoutes);
 app.use('/admin', adminRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/oauth', oauthRouter);
+app.use('/slack', oauthRouter);
 
 // System Health Endpoint
 app.get(['/api/health', '/health'], (req: Request, res: Response) => {

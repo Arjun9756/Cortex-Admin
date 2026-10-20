@@ -35,6 +35,7 @@ interface ClaimTicketInfo {
         siteUrl?: string;
         [key: string]: any;
     };
+    signingSecret?: string | null;
     createdAt: number;
 }
 const claimTickets = new Map<string, ClaimTicketInfo>();
@@ -53,7 +54,11 @@ setInterval(cleanExpired, 30000);
 
 // Production-grade Dynamic Base URL resolution (Host Header & Proxy Aware)
 function getBaseUrl(req: Request): string {
-    const rawHost = (req.headers['x-forwarded-host'] as string) || req.get('host') || env.ADMIN_PUBLIC_URL || 'admin.cortexco.in';
+    if (env.ADMIN_PUBLIC_URL && env.ADMIN_PUBLIC_URL.trim()) {
+        const clean = env.ADMIN_PUBLIC_URL.trim().replace(/\/+$/, '');
+        return clean.startsWith('http') ? clean : `https://${clean}`;
+    }
+    const rawHost = (req.headers['x-forwarded-host'] as string) || req.get('host') || 'admin.cortexco.in';
     const firstHost = rawHost.split(',')[0] || 'admin.cortexco.in';
     const host = firstHost.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
     const rawProto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
@@ -142,7 +147,7 @@ oauthRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
             const botScopes = encodeURIComponent('channels:read,groups:read,users:read,users:read.email,team:read');
             redirectUrl = `https://slack.com/oauth/v2/authorize?client_id=${encodeURIComponent(clientId)}&scope=${botScopes}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}`;
         } else if (provider === 'jira') {
-            const scopes = encodeURIComponent('read:jira-work read:jira-user offline_access read:me');
+            const scopes = encodeURIComponent('read:jira-work read:jira-user manage:jira-webhook offline_access read:me');
             redirectUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${encodeURIComponent(clientId)}&scope=${scopes}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}&response_type=code&prompt=consent`;
         }
 
@@ -370,6 +375,7 @@ oauthRouter.get('/:provider/callback', async (req: Request, res: Response) => {
             accountName,
             accountEmail,
             metadata: ticketMetadata,
+            signingSecret: provider === 'slack' ? (env.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET || process.env.SLACK_SECRET || null) : null,
             createdAt: Date.now()
         });
 
@@ -425,6 +431,7 @@ oauthRouter.post('/claim', async (req: Request, res: Response) => {
             accountName: claimInfo.accountName,
             accountEmail: claimInfo.accountEmail,
             cloudId: claimInfo.metadata?.cloudId || claimInfo.accountId,
+            signingSecret: claimInfo.signingSecret || null,
             metadata: claimInfo.metadata || {}
         });
     } catch (err: any) {
@@ -449,6 +456,171 @@ oauthRouter.post('/disconnect', async (req: Request, res: Response) => {
         return res.json({ success: true, message: `Disconnected ${provider} for license` });
     } catch (err: any) {
         console.error('[OAuthBroker] Disconnect error:', err);
+        return res.status(500).json({ success: false, error: err?.message });
+    }
+});
+
+// 4.5. POST /api/oauth/client-webhook (Client registers or overwrites active tunnel/webhook URL)
+oauthRouter.post('/client-webhook', async (req: Request, res: Response) => {
+    try {
+        const { license_key, webhook_url, provider, account_id } = req.body;
+        if (!license_key || !webhook_url) {
+            return res.status(400).json({ success: false, error: 'license_key and webhook_url are required' });
+        }
+
+        const cleanUrl = String(webhook_url).trim().replace(/\/+$/, '');
+
+        // Verify valid active license
+        const [licenses] = await pool.query<RowDataPacket[]>(
+            'SELECT id, status FROM licenses WHERE license_key = ?',
+            [license_key.trim()]
+        );
+        if (!licenses || licenses.length === 0) {
+            return res.status(404).json({ success: false, error: 'License key not found' });
+        }
+
+        if (provider) {
+            await pool.query(
+                `UPDATE client_connectors 
+                 SET webhook_url = ?, 
+                     account_id = COALESCE(NULLIF(?, ''), account_id),
+                     updated_at = CURRENT_TIMESTAMP 
+                 WHERE license_key = ? AND provider = ?`,
+                [cleanUrl, account_id || '', license_key.trim(), provider]
+            );
+        } else {
+            await pool.query(
+                'UPDATE client_connectors SET webhook_url = ?, updated_at = CURRENT_TIMESTAMP WHERE license_key = ?',
+                [cleanUrl, license_key.trim()]
+            );
+        }
+
+        console.log(`[OAuthBroker] Overwrote client webhook URL for license ${license_key} (${provider || 'all'}): ${cleanUrl}`);
+        return res.json({ success: true, message: 'Client webhook URL updated successfully', webhook_url: cleanUrl });
+    } catch (err: any) {
+        console.error('[OAuthBroker] Error updating client webhook:', err);
+        return res.status(500).json({ success: false, error: err?.message });
+    }
+});
+
+// 4.6. POST /api/oauth/slack/events (Zero-Persistence Instant Relay for Slack Events)
+oauthRouter.post('/slack/events', async (req: Request, res: Response) => {
+    try {
+        // 1. Handle Slack URL Verification Challenge (Setup Handshake)
+        if (req.body?.type === 'url_verification') {
+            console.log('[SlackRelay] Verified Slack Challenge handshake successfully.');
+            return res.json({ challenge: req.body.challenge });
+        }
+
+        // Acknowledge Slack immediately within 3s window to avoid retries
+        res.status(200).send('OK');
+
+        // 2. Extract Team ID
+        const teamId = req.body?.team_id || req.body?.context_team_id || req.body?.team?.id;
+        if (!teamId) return;
+
+        // 3. Fast In-Memory / DB routing to client webhook
+        const [rows] = await pool.query<RowDataPacket[]>(
+            `SELECT webhook_url FROM client_connectors 
+             WHERE account_id = ? AND provider = 'slack' AND status = 'connected' AND webhook_url IS NOT NULL
+             ORDER BY updated_at DESC LIMIT 1`,
+            [teamId]
+        );
+
+        let targetUrl = rows?.[0]?.webhook_url;
+        if (!targetUrl) {
+            // Fallback for single-tenant / testing environments
+            const [fallback] = await pool.query<RowDataPacket[]>(
+                `SELECT webhook_url FROM client_connectors 
+                 WHERE provider = 'slack' AND status = 'connected' AND webhook_url IS NOT NULL 
+                 ORDER BY updated_at DESC LIMIT 1`
+            );
+            targetUrl = fallback?.[0]?.webhook_url;
+        }
+
+        if (targetUrl) {
+            const forwardHeaders: Record<string, string> = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Cortex-Admin-Relay/1.0',
+            };
+            if (req.headers['x-slack-signature']) {
+                forwardHeaders['x-slack-signature'] = String(req.headers['x-slack-signature']);
+            }
+            if (req.headers['x-slack-request-timestamp']) {
+                forwardHeaders['x-slack-request-timestamp'] = String(req.headers['x-slack-request-timestamp']);
+            }
+
+            // Zero-persistence streaming relay (< 10ms)
+            fetch(targetUrl, {
+                method: 'POST',
+                headers: forwardHeaders,
+                body: JSON.stringify(req.body),
+                signal: AbortSignal.timeout(10000),
+            }).catch(fErr => {
+                console.warn(`[SlackRelay] Notice: Client webhook unreachable (${targetUrl}):`, fErr?.message);
+            });
+        }
+    } catch (err: any) {
+        console.error('[SlackRelay] Error handling Slack event:', err?.message);
+    }
+});
+
+// 5. POST /api/oauth/:provider/refresh (Token rotation for background operations & continuous sync)
+oauthRouter.post('/:provider/refresh', async (req: Request, res: Response) => {
+    try {
+        const provider = req.params.provider as 'github' | 'slack' | 'jira';
+        const { license_key, refresh_token } = req.body;
+
+        if (!license_key || !refresh_token) {
+            return res.status(400).json({ success: false, error: 'license_key and refresh_token are required' });
+        }
+
+        // Verify client license
+        const licenseCheck = await validateLicense(license_key);
+        if (!licenseCheck.valid) {
+            return res.status(403).json({ success: false, error: licenseCheck.error || 'Invalid license key' });
+        }
+
+        if (provider === 'jira') {
+            const clientId = env.JIRA_CLIENT_ID || process.env.JIRA_CLIENT_ID || '';
+            const clientSecret = env.JIRA_CLIENT_SECRET || process.env.JIRA_CLIENT_SECRET || '';
+
+            if (!clientId || !clientSecret) {
+                return res.status(500).json({ success: false, error: 'Jira OAuth credentials not configured on Cortex-Admin' });
+            }
+
+            const tokenRes = await fetch('https://auth.atlassian.com/oauth/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({
+                    grant_type: 'refresh_token',
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    refresh_token: refresh_token.trim()
+                })
+            });
+
+            const tokenData = (await tokenRes.json()) as any;
+            if (!tokenRes.ok || !tokenData.access_token) {
+                return res.status(tokenRes.status || 400).json({
+                    success: false,
+                    error: tokenData.error || 'Failed to refresh Jira token',
+                    error_description: tokenData.error_description || 'Invalid grant'
+                });
+            }
+
+            return res.json({
+                success: true,
+                provider: 'jira',
+                accessToken: tokenData.access_token,
+                refreshToken: tokenData.refresh_token || refresh_token,
+                expiresIn: tokenData.expires_in || 3600
+            });
+        }
+
+        return res.status(400).json({ success: false, error: `Provider ${provider} does not support broker token refresh` });
+    } catch (err: any) {
+        console.error('[OAuthBroker] Refresh error:', err);
         return res.status(500).json({ success: false, error: err?.message });
     }
 });

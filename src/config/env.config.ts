@@ -32,6 +32,7 @@ const env = {
     GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET || '',
     SLACK_CLIENT_ID: process.env.SLACK_CLIENT_ID || '',
     SLACK_CLIENT_SECRET: process.env.SLACK_CLIENT_SECRET || '',
+    SLACK_SIGNING_SECRET: process.env.SLACK_SIGNING_SECRET || process.env.SLACK_SECRET || '',
     JIRA_CLIENT_ID: process.env.JIRA_CLIENT_ID || '',
     JIRA_CLIENT_SECRET: process.env.JIRA_CLIENT_SECRET || '',
     ADMIN_PUBLIC_URL: process.env.ADMIN_PUBLIC_URL || 'https://admin.cortexco.in'

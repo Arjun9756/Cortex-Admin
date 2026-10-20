@@ -144,6 +144,12 @@ export async function initDatabase() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
+        try {
+            await connection.query('ALTER TABLE client_connectors ADD COLUMN webhook_url VARCHAR(500) NULL AFTER scopes');
+        } catch {
+            // column already exists
+        }
+
         // Sync/Seed default super admin from env
         const adminEmail = (env.ADMIN_DEFAULT_EMAIL || 'admin@cortex.com').toLowerCase().trim();
         const passwordHash = hashPassword(env.ADMIN_DEFAULT_PASSWORD || 'Admin@Cortex2026');
