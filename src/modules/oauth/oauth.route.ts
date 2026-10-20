@@ -503,8 +503,8 @@ oauthRouter.post('/client-webhook', async (req: Request, res: Response) => {
     }
 });
 
-// 4.6. POST /api/oauth/slack/events (Zero-Persistence Instant Relay for Slack Events)
-oauthRouter.post('/slack/events', async (req: Request, res: Response) => {
+// 4.6. POST /api/oauth/slack/events & /api/slack/events (Zero-Persistence Instant Relay for Slack Events)
+oauthRouter.post(['/slack/events', '/events'], async (req: Request, res: Response) => {
     try {
         // 1. Handle Slack URL Verification Challenge (Setup Handshake)
         if (req.body?.type === 'url_verification') {
