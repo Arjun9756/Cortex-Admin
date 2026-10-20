@@ -503,67 +503,6 @@ oauthRouter.post('/client-webhook', async (req: Request, res: Response) => {
     }
 });
 
-// 4.6. POST /api/oauth/slack/events & /api/slack/events (Zero-Persistence Instant Relay for Slack Events)
-oauthRouter.post(['/slack/events', '/events'], async (req: Request, res: Response) => {
-    try {
-        // 1. Handle Slack URL Verification Challenge (Setup Handshake)
-        if (req.body?.type === 'url_verification') {
-            console.log('[SlackRelay] Verified Slack Challenge handshake successfully.');
-            return res.json({ challenge: req.body.challenge });
-        }
-
-        // Acknowledge Slack immediately within 3s window to avoid retries
-        res.status(200).send('OK');
-
-        // 2. Extract Team ID
-        const teamId = req.body?.team_id || req.body?.context_team_id || req.body?.team?.id;
-        if (!teamId) return;
-
-        // 3. Fast In-Memory / DB routing to client webhook
-        const [rows] = await pool.query<RowDataPacket[]>(
-            `SELECT webhook_url FROM client_connectors 
-             WHERE account_id = ? AND provider = 'slack' AND status = 'connected' AND webhook_url IS NOT NULL
-             ORDER BY updated_at DESC LIMIT 1`,
-            [teamId]
-        );
-
-        let targetUrl = rows?.[0]?.webhook_url;
-        if (!targetUrl) {
-            // Fallback for single-tenant / testing environments
-            const [fallback] = await pool.query<RowDataPacket[]>(
-                `SELECT webhook_url FROM client_connectors 
-                 WHERE provider = 'slack' AND status = 'connected' AND webhook_url IS NOT NULL 
-                 ORDER BY updated_at DESC LIMIT 1`
-            );
-            targetUrl = fallback?.[0]?.webhook_url;
-        }
-
-        if (targetUrl) {
-            const forwardHeaders: Record<string, string> = {
-                'Content-Type': 'application/json',
-                'User-Agent': 'Cortex-Admin-Relay/1.0',
-            };
-            if (req.headers['x-slack-signature']) {
-                forwardHeaders['x-slack-signature'] = String(req.headers['x-slack-signature']);
-            }
-            if (req.headers['x-slack-request-timestamp']) {
-                forwardHeaders['x-slack-request-timestamp'] = String(req.headers['x-slack-request-timestamp']);
-            }
-
-            // Zero-persistence streaming relay (< 10ms)
-            fetch(targetUrl, {
-                method: 'POST',
-                headers: forwardHeaders,
-                body: JSON.stringify(req.body),
-                signal: AbortSignal.timeout(10000),
-            }).catch(fErr => {
-                console.warn(`[SlackRelay] Notice: Client webhook unreachable (${targetUrl}):`, fErr?.message);
-            });
-        }
-    } catch (err: any) {
-        console.error('[SlackRelay] Error handling Slack event:', err?.message);
-    }
-});
 
 // 5. POST /api/oauth/:provider/refresh (Token rotation for background operations & continuous sync)
 oauthRouter.post('/:provider/refresh', async (req: Request, res: Response) => {
