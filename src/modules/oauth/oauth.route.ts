@@ -144,7 +144,7 @@ oauthRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
             const scopes = encodeURIComponent('repo read:org user:email read:user');
             redirectUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${scopes}&state=${encodeURIComponent(state)}`;
         } else if (provider === 'slack') {
-            const botScopes = encodeURIComponent('channels:read,groups:read,users:read,users:read.email,team:read');
+            const botScopes = encodeURIComponent('channels:read,channels:join,channels:history,groups:read,groups:history,users:read,users:read.email,team:read');
             redirectUrl = `https://slack.com/oauth/v2/authorize?client_id=${encodeURIComponent(clientId)}&scope=${botScopes}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}`;
         } else if (provider === 'jira') {
             const scopes = encodeURIComponent('read:jira-work read:jira-user manage:jira-webhook offline_access read:me');
