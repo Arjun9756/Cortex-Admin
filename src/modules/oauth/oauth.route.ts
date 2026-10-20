@@ -54,17 +54,21 @@ setInterval(cleanExpired, 30000);
 
 // Production-grade Dynamic Base URL resolution (Host Header & Proxy Aware)
 function getBaseUrl(req: Request): string {
-    if (env.ADMIN_PUBLIC_URL && env.ADMIN_PUBLIC_URL.trim()) {
+    // 1. If request is coming from or explicitly targeting admin.cortexco.in
+    const rawHost = (req.headers['x-forwarded-host'] as string) || req.get('host') || '';
+    const firstHost = rawHost.split(',')[0]?.trim().toLowerCase() || '';
+    if (firstHost.includes('admin.cortexco.in') || firstHost.includes('cortexco.in')) {
+        return 'https://admin.cortexco.in';
+    }
+
+    // 2. If ADMIN_PUBLIC_URL is configured and NOT the outdated vercel domain
+    if (env.ADMIN_PUBLIC_URL && env.ADMIN_PUBLIC_URL.trim() && !env.ADMIN_PUBLIC_URL.includes('cortex-admin-two.vercel.app')) {
         const clean = env.ADMIN_PUBLIC_URL.trim().replace(/\/+$/, '');
         return clean.startsWith('http') ? clean : `https://${clean}`;
     }
-    const rawHost = (req.headers['x-forwarded-host'] as string) || req.get('host') || 'admin.cortexco.in';
-    const firstHost = rawHost.split(',')[0] || 'admin.cortexco.in';
-    const host = firstHost.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
-    const rawProto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
-    const firstProto = rawProto.split(',')[0] || 'https';
-    const proto = firstProto.trim();
-    return `${proto}://${host}`;
+
+    // 3. Fallback strictly to canonical production admin domain
+    return 'https://admin.cortexco.in';
 }
 
 // Helper to validate license key

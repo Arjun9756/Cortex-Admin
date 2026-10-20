@@ -34,8 +34,9 @@ const env = {
     SLACK_CLIENT_SECRET: process.env.SLACK_CLIENT_SECRET || '',
     SLACK_SIGNING_SECRET: process.env.SLACK_SIGNING_SECRET || process.env.SLACK_SECRET || '',
     JIRA_CLIENT_ID: process.env.JIRA_CLIENT_ID || '',
-    JIRA_CLIENT_SECRET: process.env.JIRA_CLIENT_SECRET || '',
-    ADMIN_PUBLIC_URL: process.env.ADMIN_PUBLIC_URL || 'https://admin.cortexco.in'
+    ADMIN_PUBLIC_URL: (process.env.ADMIN_PUBLIC_URL && !process.env.ADMIN_PUBLIC_URL.includes('cortex-admin-two.vercel.app'))
+        ? process.env.ADMIN_PUBLIC_URL.trim()
+        : 'https://admin.cortexco.in'
 }
 
 export default Object.freeze(env)
