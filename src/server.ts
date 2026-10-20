@@ -115,7 +115,7 @@ app.get(['/api/health', '/health'], (req: Request, res: Response) => {
     res.json({
         status: 'online',
         service: 'Cortex License & Admin Control Plane',
-        version: '1.0.0',
+        version: '1.0.2-canonical-admin',
         environment: process.env.VERCEL ? 'vercel-serverless' : 'standalone',
         timestamp: new Date().toISOString()
     });
