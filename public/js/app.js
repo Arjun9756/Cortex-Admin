@@ -21,7 +21,31 @@
         filterStatus: 'all',
         searchQuery: '',
         devicesSearchQuery: '',
-        currentHwidLicense: null
+        currentHwidLicense: null,
+        sessionToken: null,
+        isUnlocking: false,
+
+        // Resend Email Integration State (Zero-DB Persistence)
+        resendConfig: { configured: false, valid: false },
+        audiences: [],
+        currentAudienceId: '',
+        contacts: [],
+        contactsFilter: 'all',
+        contactsSearch: '',
+        broadcasts: [],
+        broadcastSubTab: 'audiences',
+        broadcastEditorMode: 'visual',
+        supportSubTab: 'compose',
+        sentEmails: [],
+        trackerFilter: 'all',
+        previewDevice: 'desktop',
+        currentPreviewType: 'broadcast',
+        parsedCsvContacts: [],
+        supportAttachments: [],
+        activeComposerContext: 'support',
+        selectedPhoto: null,
+        activeImgElement: null,
+        lastSavedRange: null
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -160,14 +184,49 @@
     // ─────────────────────────────────────────────────────────────────────────
     // MASTER SESSION AUTHENTICATION & ACCESS CONTROL
     // ─────────────────────────────────────────────────────────────────────────
+    function getAuthToken() {
+        if (state.sessionToken) return state.sessionToken;
+        try {
+            const local = localStorage.getItem('cortex_admin_token');
+            if (local) {
+                state.sessionToken = local;
+                return local;
+            }
+        } catch (_) {}
+        try {
+            const sess = sessionStorage.getItem('cortex_admin_token');
+            if (sess) {
+                state.sessionToken = sess;
+                return sess;
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    function setAuthToken(token) {
+        state.sessionToken = token || null;
+        if (!token) {
+            try { localStorage.removeItem('cortex_admin_token'); } catch (_) {}
+            try { sessionStorage.removeItem('cortex_admin_token'); } catch (_) {}
+            return;
+        }
+        try { localStorage.setItem('cortex_admin_token', token); } catch (_) {}
+        try { sessionStorage.setItem('cortex_admin_token', token); } catch (_) {}
+    }
+
     function showAuthGate() {
+        if (state.isUnlocking) {
+            console.log('[AUTH] Ignored showAuthGate while unlocking is active');
+            return;
+        }
         const overlay = document.getElementById('auth-gate-overlay');
         if (overlay) {
+            overlay.classList.remove('hidden');
+            overlay.style.removeProperty('display');
             overlay.style.display = 'flex';
             const pwdInput = document.getElementById('login-password');
             if (pwdInput) {
                 pwdInput.value = '';
-                pwdInput.focus();
             }
             const errBanner = document.getElementById('login-error-banner');
             if (errBanner) {
@@ -180,7 +239,8 @@
     function hideAuthGate() {
         const overlay = document.getElementById('auth-gate-overlay');
         if (overlay) {
-            overlay.style.display = 'none';
+            overlay.style.setProperty('display', 'none', 'important');
+            overlay.classList.add('hidden');
         }
     }
 
@@ -204,7 +264,7 @@
     }
 
     async function checkAuthSession() {
-        const token = localStorage.getItem('cortex_admin_token');
+        const token = getAuthToken();
         if (!token) {
             showAuthGate();
             return false;
@@ -222,23 +282,35 @@
                 if (data.success && data.admin) {
                     updateOperatorProfile(data.admin);
                     hideAuthGate();
+                    switchTab(getStoredActiveTab() || 'dashboard');
                     return true;
                 }
             }
+            if (res.status === 401) {
+                setAuthToken(null);
+                showAuthGate();
+                return false;
+            }
         } catch (err) {
-            console.error('Session verification error:', err);
+            console.warn('Session verification network error:', err);
+            hideAuthGate();
+            return true;
         }
 
-        // Invalid or expired session
-        localStorage.removeItem('cortex_admin_token');
+        setAuthToken(null);
         showAuthGate();
         return false;
     }
 
     async function handleLoginSubmit(e) {
-        if (e) e.preventDefault();
-        const email = document.getElementById('login-email')?.value.trim();
-        const password = document.getElementById('login-password')?.value;
+        if (e) {
+            try { e.preventDefault(); } catch (_) {}
+            try { e.stopPropagation(); } catch (_) {}
+        }
+        const emailInput = document.getElementById('login-email');
+        const passwordInput = document.getElementById('login-password');
+        const email = (emailInput?.value || '').trim();
+        const password = (passwordInput?.value || '').trim();
         const submitBtn = document.getElementById('btn-login-submit');
         const errorBanner = document.getElementById('login-error-banner');
 
@@ -256,6 +328,8 @@
         }
         if (errorBanner) errorBanner.style.display = 'none';
 
+        state.isUnlocking = true;
+
         try {
             const res = await fetch('/api/admin/login', {
                 method: 'POST',
@@ -268,28 +342,38 @@
 
             const data = await res.json().catch(() => ({}));
             if (res.ok && data.success && data.token) {
-                localStorage.setItem('cortex_admin_token', data.token);
+                setAuthToken(data.token);
                 updateOperatorProfile(data.admin);
                 hideAuthGate();
+
+                const activeTab = getStoredActiveTab() || 'dashboard';
+                switchTab(activeTab);
                 showToast('Console unlocked. Master session active.', 'success');
-                await Promise.all([
-                    loadLicenses(),
-                    loadClients(),
-                    loadGlobalDevices(),
-                    loadLogs()
-                ]);
+
+                // Shield against any race condition re-lockout for 4 seconds
+                setTimeout(() => {
+                    state.isUnlocking = false;
+                }, 4000);
+
+                // Run background data fetches independently without risking lockout
+                loadLicenses().catch(err => console.warn('Background loadLicenses failed:', err));
+                loadClients().catch(err => console.warn('Background loadClients failed:', err));
+                loadGlobalDevices().catch(err => console.warn('Background loadGlobalDevices failed:', err));
+                loadLogs().catch(err => console.warn('Background loadLogs failed:', err));
+                checkResendStatus().catch(err => console.warn('Background checkResendStatus failed:', err));
             } else {
+                state.isUnlocking = false;
                 if (errorBanner) {
                     errorBanner.textContent = data.message || 'Access Denied: Invalid administrator credentials.';
                     errorBanner.style.display = 'block';
                 }
-                const pwdInput = document.getElementById('login-password');
-                if (pwdInput) {
-                    pwdInput.value = '';
-                    pwdInput.focus();
+                if (passwordInput) {
+                    passwordInput.value = '';
+                    passwordInput.focus();
                 }
             }
         } catch (err) {
+            state.isUnlocking = false;
             if (errorBanner) {
                 errorBanner.textContent = 'Connection to authorization server failed.';
                 errorBanner.style.display = 'block';
@@ -303,7 +387,7 @@
     }
 
     function handleLogout() {
-        localStorage.removeItem('cortex_admin_token');
+        setAuthToken(null);
         state.licenses = [];
         state.clients = [];
         state.globalDevices = [];
@@ -323,9 +407,11 @@
     // SECURE API CLIENT
     // ─────────────────────────────────────────────────────────────────────────
     async function apiRequest(endpoint, method = 'GET', body = null) {
-        const token = localStorage.getItem('cortex_admin_token');
+        const token = getAuthToken();
         if (!token && !endpoint.includes('/api/admin/login')) {
-            showAuthGate();
+            if (!state.isUnlocking) {
+                showAuthGate();
+            }
             return { ok: false, status: 401, success: false, message: 'Authentication required' };
         }
 
@@ -345,9 +431,11 @@
         try {
             const res = await fetch(endpoint, config);
             if (res.status === 401) {
-                localStorage.removeItem('cortex_admin_token');
-                showAuthGate();
-                showToast('Master session expired. Re-authentication required.', 'error');
+                if (!state.isUnlocking) {
+                    setAuthToken(null);
+                    showAuthGate();
+                    showToast('Master session expired. Re-authentication required.', 'error');
+                }
                 return { ok: false, status: 401, success: false, message: 'Session expired' };
             }
             const data = await res.json().catch(() => ({}));
@@ -362,7 +450,7 @@
     // BULLETPROOF TAB NAVIGATION (Event-Delegated & State-Safe)
     // ─────────────────────────────────────────────────────────────────────────
     function getStoredActiveTab() {
-        const validTabs = ['dashboard', 'licenses', 'devices', 'telemetry', 'clients'];
+        const validTabs = ['dashboard', 'licenses', 'devices', 'telemetry', 'clients', 'broadcasts', 'support-mail'];
         const hash = (window.location.hash || '').replace('#', '').trim().toLowerCase();
         if (validTabs.includes(hash)) return hash;
 
@@ -413,7 +501,9 @@
                 licenses: 'Licenses & Hardware Quota Allocation',
                 devices: 'Hardware Machine Fleet Inventory',
                 telemetry: 'Telemetry & Cryptographic Audit Stream',
-                clients: 'Client Organizations Directory'
+                clients: 'Client Organizations Directory',
+                broadcasts: 'Marketing & Operational Broadcast Engine',
+                'support-mail': 'Customer Support Communications & Delivery Telemetry'
             };
             breadcrumbEl.innerHTML = `<span>${titles[tabId] || 'Control Plane'}</span>`;
         }
@@ -422,6 +512,15 @@
         if (tabId === 'devices') loadGlobalDevices();
         if (tabId === 'telemetry') loadLogs();
         if (tabId === 'dashboard') updateDashboardMetrics();
+        if (tabId === 'broadcasts') {
+            checkResendStatus();
+            loadAudiences();
+            loadBroadcasts();
+        }
+        if (tabId === 'support-mail') {
+            checkResendStatus();
+            loadSentHistory();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1230,8 +1329,1668 @@
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // MODAL HELPERS & CLOCK
+    // RESEND EMAIL INTEGRATION: BROADCASTS & SUPPORT 1-TO-1 (Zero-DB Direct)
     // ─────────────────────────────────────────────────────────────────────────
+
+    async function checkResendStatus() {
+        try {
+            const res = await apiRequest('/api/email/status');
+            if (res.success && res.data) {
+                state.resendConfig = res.data;
+                const banner = document.getElementById('resend-api-banner');
+                const title = document.getElementById('resend-banner-title');
+                const desc = document.getElementById('resend-banner-desc');
+
+                if (banner) {
+                    if (!res.data.configured) {
+                        banner.style.display = 'flex';
+                        if (title) title.textContent = 'Resend API Key Missing';
+                        if (desc) desc.innerHTML = 'Add <code>RESEND_API_KEY=re_...</code> in your <code>.env</code> file to enable email dispatch.';
+                    } else if (!res.data.valid) {
+                        banner.style.display = 'flex';
+                        if (title) title.textContent = 'Resend API Authentication Failed';
+                        if (desc) desc.innerHTML = `Error from Resend: ${escapeHtml(res.data.error || 'Invalid API Key')}. Verify your API key at resend.com.`;
+                    } else {
+                        banner.style.display = 'none';
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Failed to check Resend status:', err);
+        }
+    }
+
+    // --- AUDIENCE & CONTACTS MANAGEMENT ---
+
+    async function loadAudiences() {
+        const selectAudience = document.getElementById('bcast-audience-select');
+        const selectCompose = document.getElementById('bcast-compose-audience');
+
+        try {
+            const res = await apiRequest('/api/email/segments');
+            if (res.success && Array.isArray(res.data)) {
+                state.audiences = res.data;
+
+                let optionsHtml = '';
+                if (state.audiences.length === 0) {
+                    optionsHtml = '<option value="">No audiences found (Click "+ New Audience")</option>';
+                } else {
+                    optionsHtml = state.audiences.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name || 'Unnamed Audience')}</option>`).join('');
+                }
+
+                if (selectAudience) selectAudience.innerHTML = optionsHtml;
+                if (selectCompose) selectCompose.innerHTML = '<option value="">Select target audience...</option>' + optionsHtml;
+
+                if (state.audiences.length > 0) {
+                    if (!state.currentAudienceId || !state.audiences.some(a => a.id === state.currentAudienceId)) {
+                        state.currentAudienceId = state.audiences[0].id;
+                    }
+                    if (selectAudience) selectAudience.value = state.currentAudienceId;
+                    if (selectCompose) selectCompose.value = state.currentAudienceId;
+                    updateAudienceMetrics();
+                    await loadContacts(state.currentAudienceId);
+                } else {
+                    state.currentAudienceId = '';
+                    updateAudienceMetrics();
+                    state.contacts = [];
+                    renderContactsTable();
+                }
+            } else {
+                if (selectAudience) selectAudience.innerHTML = '<option value="">Failed to connect to Resend</option>';
+            }
+        } catch (err) {
+            console.error('Failed to load audiences from Resend:', err);
+        }
+    }
+
+    function updateAudienceMetrics() {
+        const idEl = document.getElementById('bcast-metric-id');
+        const countEl = document.getElementById('bcast-metric-count');
+        if (idEl) idEl.textContent = state.currentAudienceId || '---';
+        if (countEl) countEl.textContent = state.contacts.length;
+    }
+
+    async function loadContacts(audienceId) {
+        if (!audienceId) {
+            state.contacts = [];
+            renderContactsTable();
+            updateAudienceMetrics();
+            return;
+        }
+
+        try {
+            const res = await apiRequest(`/api/email/contacts?segmentId=${encodeURIComponent(audienceId)}`);
+            if (res.success && Array.isArray(res.data)) {
+                state.contacts = res.data;
+            } else {
+                state.contacts = [];
+            }
+            renderContactsTable();
+            updateAudienceMetrics();
+        } catch (err) {
+            console.error('Failed to load contacts:', err);
+            state.contacts = [];
+            renderContactsTable();
+        }
+    }
+
+    function renderContactsTable() {
+        const tbody = document.getElementById('contacts-table-body');
+        const totalBadge = document.getElementById('count-contacts-total');
+        if (!tbody) return;
+
+        let filtered = state.contacts;
+        const statusFilter = document.getElementById('contacts-status-filter')?.value || 'all';
+        const search = (document.getElementById('contacts-search-input')?.value || '').toLowerCase().trim();
+
+        if (statusFilter === 'subscribed') {
+            filtered = filtered.filter(c => !c.unsubscribed);
+        } else if (statusFilter === 'unsubscribed') {
+            filtered = filtered.filter(c => !!c.unsubscribed);
+        }
+
+        if (search) {
+            filtered = filtered.filter(c => {
+                const email = (c.email || '').toLowerCase();
+                const fn = (c.first_name || '').toLowerCase();
+                const ln = (c.last_name || '').toLowerCase();
+                return email.includes(search) || fn.includes(search) || ln.includes(search);
+            });
+        }
+
+        if (totalBadge) totalBadge.textContent = state.contacts.length;
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6">
+                        <div class="table-empty">
+                            <div class="table-empty-text">No contacts found in this audience. Add one or click "Import CSV".</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(c => `
+            <tr>
+                <td>
+                    <span style="font-size: 13px; font-weight: 500; color: var(--text-white);">${escapeHtml(c.email)}</span>
+                </td>
+                <td>
+                    <span style="color: var(--text-primary); font-size: 12.5px;">${escapeHtml(c.first_name || '---')}</span>
+                </td>
+                <td>
+                    <span style="color: var(--text-primary); font-size: 12.5px;">${escapeHtml(c.last_name || '---')}</span>
+                </td>
+                <td>
+                    <span class="status-pill ${c.unsubscribed ? 'revoked' : 'active'}" style="font-size: 10.5px; padding: 1px 6px;">
+                        <span class="indicator-dot"></span>
+                        <span>${c.unsubscribed ? 'Unsubscribed' : 'Subscribed'}</span>
+                    </span>
+                </td>
+                <td>
+                    <span style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono);">${formatDate(c.created_at)}</span>
+                </td>
+                <td class="align-right">
+                    <button class="btn btn-secondary btn-sm" style="color: var(--ruby);" onclick="window.app.deleteContact('${escapeHtml(c.id || c.email)}')">
+                        Remove
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function deleteContact(idOrEmail) {
+        if (!confirm(`Are you sure you want to permanently remove subscriber "${idOrEmail}" from Resend?`)) return;
+        const res = await apiRequest(`/api/email/contacts/${encodeURIComponent(idOrEmail)}`, 'DELETE');
+        if (res.success) {
+            showToast('Subscriber removed from Resend', 'info');
+            await loadContacts(state.currentAudienceId);
+        } else {
+            showToast(res.message || 'Failed to remove contact', 'error');
+        }
+    }
+
+    async function deleteCurrentAudience() {
+        if (!state.currentAudienceId) {
+            showToast('No audience selected', 'error');
+            return;
+        }
+        const current = state.audiences.find(a => a.id === state.currentAudienceId);
+        const name = current ? current.name : state.currentAudienceId;
+        if (!confirm(`Are you sure you want to delete audience "${name}" from Resend? This action cannot be undone.`)) return;
+
+        const res = await apiRequest(`/api/email/segments/${encodeURIComponent(state.currentAudienceId)}`, 'DELETE');
+        if (res.success) {
+            showToast('Audience deleted from Resend', 'info');
+            state.currentAudienceId = '';
+            await loadAudiences();
+        } else {
+            showToast(res.message || 'Failed to delete audience', 'error');
+        }
+    }
+
+    // --- CSV BATCH IMPORTER ---
+
+    function parseCSVText(csvText) {
+        const lines = csvText.split(/\r\n|\n|\r/).filter(l => l.trim().length > 0);
+        if (lines.length < 2) return [];
+
+        function parseLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+
+        const header = parseLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+        const emailIdx = header.findIndex(h => h.includes('email'));
+        const fnIdx = header.findIndex(h => h.includes('first') || h === 'name');
+        const lnIdx = header.findIndex(h => h.includes('last'));
+
+        if (emailIdx === -1) {
+            throw new Error('CSV must contain an "email" column header.');
+        }
+
+        const records = [];
+        for (let i = 1; i < lines.length; i++) {
+            const cols = parseLine(lines[i]);
+            const email = (cols[emailIdx] || '').trim();
+            if (email && email.includes('@')) {
+                records.push({
+                    email: email.toLowerCase(),
+                    firstName: fnIdx !== -1 ? (cols[fnIdx] || '').trim() : '',
+                    lastName: lnIdx !== -1 ? (cols[lnIdx] || '').trim() : ''
+                });
+            }
+        }
+        return records;
+    }
+
+    function handleCsvSelected(event) {
+        const file = event.target?.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const content = e.target.result;
+                const records = parseCSVText(content);
+                state.parsedCsvContacts = records;
+
+                const previewSection = document.getElementById('csv-preview-section');
+                const badge = document.getElementById('csv-summary-badge');
+                const tbody = document.getElementById('csv-preview-tbody');
+                const btnImport = document.getElementById('btn-execute-csv-import');
+
+                if (records.length === 0) {
+                    showToast('No valid email records found in CSV file', 'error');
+                    if (btnImport) btnImport.disabled = true;
+                    return;
+                }
+
+                if (badge) badge.textContent = `${records.length} subscribers detected`;
+                if (tbody) {
+                    const previewRows = records.slice(0, 10);
+                    tbody.innerHTML = previewRows.map((r, idx) => `
+                        <tr>
+                            <td><span style="font-size: 11px; color: var(--text-muted);">${idx + 1}</span></td>
+                            <td><span style="font-size: 12px; color: var(--text-white);">${escapeHtml(r.email)}</span></td>
+                            <td><span style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(r.firstName || '---')}</span></td>
+                            <td><span style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(r.lastName || '---')}</span></td>
+                        </tr>
+                    `).join('');
+                }
+
+                if (previewSection) previewSection.style.display = 'block';
+                if (btnImport) btnImport.disabled = false;
+                showToast(`Parsed ${records.length} contacts from CSV`, 'info');
+            } catch (err) {
+                showToast(err.message || 'Failed to parse CSV file', 'error');
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function downloadSampleCsv() {
+        const sampleContent = 'email,first_name,last_name\nclient1@example.com,Sarah,Connor\nclient2@example.com,John,Doe\nsupport@enterprise.org,Jane,Smith\n';
+        const blob = new Blob([sampleContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'cortex_contacts_sample.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    async function executeCsvImport() {
+        if (!state.parsedCsvContacts || state.parsedCsvContacts.length === 0) {
+            showToast('No contacts to import', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('btn-execute-csv-import');
+        const progressSection = document.getElementById('csv-progress-section');
+        const progressFill = document.getElementById('csv-progress-fill');
+        const progressStatus = document.getElementById('csv-progress-status');
+
+        if (btn) btn.disabled = true;
+        if (progressSection) progressSection.style.display = 'block';
+        if (progressFill) progressFill.style.width = '45%';
+        if (progressStatus) progressStatus.textContent = `Syncing ${state.parsedCsvContacts.length} contacts with Resend...`;
+
+        try {
+            const res = await apiRequest('/api/email/contacts/import-csv', 'POST', {
+                contacts: state.parsedCsvContacts,
+                segmentId: state.currentAudienceId || undefined
+            });
+
+            if (progressFill) progressFill.style.width = '100%';
+
+            if (res.success && res.data) {
+                const { created, already_existed, failed } = res.data;
+                showToast(`Import completed: ${created} created, ${already_existed} existing, ${failed} failed`, 'success');
+                setTimeout(() => {
+                    closeModals();
+                    if (progressSection) progressSection.style.display = 'none';
+                    state.parsedCsvContacts = [];
+                }, 800);
+                await loadContacts(state.currentAudienceId);
+            } else {
+                showToast(res.message || 'Import failed', 'error');
+                if (btn) btn.disabled = false;
+            }
+        } catch (err) {
+            showToast('Failed to execute CSV batch import', 'error');
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    function exportContactsCsv() {
+        if (!state.contacts || state.contacts.length === 0) {
+            showToast('No contacts to export in this audience', 'error');
+            return;
+        }
+
+        let csv = 'email,first_name,last_name,unsubscribed,enrolled_at\n';
+        state.contacts.forEach(c => {
+            const cleanFn = (c.first_name || '').replace(/"/g, '""');
+            const cleanLn = (c.last_name || '').replace(/"/g, '""');
+            csv += `"${c.email}","${cleanFn}","${cleanLn}",${!!c.unsubscribed},"${c.created_at || ''}"\n`;
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        const audienceName = (state.audiences.find(a => a.id === state.currentAudienceId)?.name || 'audience').replace(/\s+/g, '_');
+        link.download = `cortex_${audienceName}_subscribers.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Subscribers exported to CSV', 'info');
+    }
+
+    // --- GMAIL SELECTION, FORMATTING & MEDIA SYSTEM ---
+
+    function saveSelection() {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+            state.lastSavedRange = sel.getRangeAt(0).cloneRange();
+        }
+    }
+
+    function restoreSelection() {
+        if (state.lastSavedRange) {
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(state.lastSavedRange);
+        }
+    }
+
+    function applyFontFamily(font, context) {
+        const canvasId = context === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvas = document.getElementById(canvasId);
+        if (canvas) canvas.focus();
+        document.execCommand('fontName', false, font);
+    }
+
+    function applyFontSize(size, context) {
+        const canvasId = context === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvas = document.getElementById(canvasId);
+        if (canvas) canvas.focus();
+        document.execCommand('fontSize', false, size);
+    }
+
+    function toggleFormatBar(context) {
+        const barId = context === 'broadcast' ? 'bcast-format-bar' : 'supp-format-bar';
+        const btnId = context === 'broadcast' ? 'btn-toggle-bcast-format' : 'btn-toggle-supp-format';
+        const bar = document.getElementById(barId);
+        const btn = document.getElementById(btnId);
+        if (!bar) return;
+        const isHidden = bar.style.display === 'none';
+        bar.style.display = isHidden ? 'flex' : 'none';
+        if (btn) btn.classList.toggle('active', isHidden);
+    }
+
+    function toggleComposerExpand(context) {
+        const winId = context === 'broadcast' ? 'bcast-compose-window' : 'supp-compose-window';
+        const win = document.getElementById(winId);
+        if (win) win.classList.toggle('expanded');
+    }
+
+    function toggleCc() {
+        const row = document.getElementById('supp-cc-row');
+        if (!row) return;
+        const isHidden = row.style.display === 'none';
+        row.style.display = isHidden ? 'flex' : 'none';
+        const btn = document.getElementById('btn-toggle-cc');
+        if (btn) btn.classList.toggle('active', isHidden);
+        if (isHidden) document.getElementById('supp-cc-input')?.focus();
+    }
+
+    function toggleBcc() {
+        const row = document.getElementById('supp-bcc-row');
+        if (!row) return;
+        const isHidden = row.style.display === 'none';
+        row.style.display = isHidden ? 'flex' : 'none';
+        const btn = document.getElementById('btn-toggle-bcc');
+        if (btn) btn.classList.toggle('active', isHidden);
+        if (isHidden) document.getElementById('supp-bcc-input')?.focus();
+    }
+
+    function togglePreheader() {
+        const row = document.getElementById('bcast-preheader-row');
+        if (!row) return;
+        const isHidden = row.style.display === 'none';
+        row.style.display = isHidden ? 'flex' : 'none';
+        const btn = document.getElementById('btn-toggle-preheader');
+        if (btn) btn.classList.toggle('active', isHidden);
+        if (isHidden) document.getElementById('bcast-preview-text-input')?.focus();
+    }
+
+    // --- SYSTEM PHOTO / IMAGE UPLOAD & URL HANDLING ---
+
+    function openPhotoModal(context = 'support') {
+        state.activeComposerContext = context;
+        saveSelection();
+        clearPhotoSelection();
+        switchPhotoTab('upload');
+
+        const attachOpt = document.getElementById('photo-attach-option');
+        if (attachOpt) {
+            attachOpt.style.display = context === 'support' ? 'inline-flex' : 'none';
+        }
+        const modal = document.getElementById('modal-insert-photo');
+        if (modal) modal.classList.add('open');
+    }
+
+    function switchPhotoTab(tab) {
+        const uploadTabBtn = document.getElementById('photo-tabbtn-upload');
+        const urlTabBtn = document.getElementById('photo-tabbtn-url');
+        const uploadView = document.getElementById('photo-view-upload');
+        const urlView = document.getElementById('photo-view-url');
+
+        if (tab === 'upload') {
+            if (uploadTabBtn) uploadTabBtn.classList.add('active');
+            if (urlTabBtn) urlTabBtn.classList.remove('active');
+            if (uploadView) uploadView.style.display = 'block';
+            if (urlView) urlView.style.display = 'none';
+        } else {
+            if (uploadTabBtn) uploadTabBtn.classList.remove('active');
+            if (urlTabBtn) urlTabBtn.classList.add('active');
+            if (uploadView) uploadView.style.display = 'none';
+            if (urlView) urlView.style.display = 'block';
+            document.getElementById('photo-url-input')?.focus();
+        }
+    }
+
+    function handlePhotoFileSelected(event) {
+        const file = event.target?.files?.[0];
+        if (!file) return;
+
+        if (file.size > 15 * 1024 * 1024) {
+            showToast('Photo exceeds 15MB size limit', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dataUrl = e.target.result;
+            state.selectedPhoto = {
+                file: file,
+                name: file.name,
+                dataUrl: dataUrl,
+                base64: dataUrl.split(',')[1],
+                type: file.type || 'image/png',
+                sizeStr: formatBytes(file.size)
+            };
+
+            const dropZone = document.getElementById('photo-drop-zone');
+            const previewCard = document.getElementById('photo-upload-preview');
+            const previewImg = document.getElementById('photo-preview-img');
+            const previewName = document.getElementById('photo-preview-name');
+            const previewSize = document.getElementById('photo-preview-size');
+
+            if (dropZone) dropZone.style.display = 'none';
+            if (previewImg) previewImg.src = dataUrl;
+            if (previewName) previewName.textContent = file.name;
+            if (previewSize) previewSize.textContent = formatBytes(file.size);
+            if (previewCard) previewCard.style.display = 'flex';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function handlePhotoUrlInput(url) {
+        url = (url || '').trim();
+        const card = document.getElementById('photo-url-preview-card');
+        const img = document.getElementById('photo-url-img');
+        if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/'))) {
+            if (img) img.src = url;
+            if (card) card.style.display = 'block';
+            state.selectedPhoto = {
+                dataUrl: url,
+                name: 'web-image',
+                type: 'image/jpeg',
+                sizeStr: 'Web Asset'
+            };
+        } else {
+            if (card) card.style.display = 'none';
+            if (state.selectedPhoto && state.selectedPhoto.name === 'web-image') {
+                state.selectedPhoto = null;
+            }
+        }
+    }
+
+    function clearPhotoSelection() {
+        state.selectedPhoto = null;
+        const picker = document.getElementById('photo-file-picker');
+        if (picker) picker.value = '';
+        const dropZone = document.getElementById('photo-drop-zone');
+        const previewCard = document.getElementById('photo-upload-preview');
+        const urlInput = document.getElementById('photo-url-input');
+        const urlCard = document.getElementById('photo-url-preview-card');
+
+        if (dropZone) dropZone.style.display = 'block';
+        if (previewCard) previewCard.style.display = 'none';
+        if (urlInput) urlInput.value = '';
+        if (urlCard) urlCard.style.display = 'none';
+    }
+
+    function executeInsertPhoto() {
+        if (!state.selectedPhoto || !state.selectedPhoto.dataUrl) {
+            showToast('Please select a photo file or enter a valid URL', 'error');
+            return;
+        }
+
+        const placement = document.querySelector('input[name="photo-placement"]:checked')?.value || 'inline';
+
+        if (placement === 'attachment' && state.activeComposerContext === 'support') {
+            state.supportAttachments.push({
+                filename: state.selectedPhoto.name || 'photo.png',
+                content: state.selectedPhoto.base64 || state.selectedPhoto.dataUrl.split(',')[1] || '',
+                sizeStr: state.selectedPhoto.sizeStr || '---',
+                content_type: state.selectedPhoto.type || 'image/png'
+            });
+            renderAttachedFileChips();
+            closeModals();
+            showToast('Photo attached to email', 'success');
+            return;
+        }
+
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        canvas.focus();
+        restoreSelection();
+
+        const imgHtml = `<img src="${state.selectedPhoto.dataUrl}" alt="${escapeHtml(state.selectedPhoto.name)}" style="max-width: 100%; height: auto; border-radius: 6px; margin: 10px 0; display: inline-block;" />`;
+        document.execCommand('insertHTML', false, imgHtml);
+
+        attachImageBubbleListeners(canvas);
+        closeModals();
+        showToast('Photo inserted inline', 'success');
+    }
+
+    // --- INLINE IMAGE RESIZE BUBBLE ---
+
+    function attachImageBubbleListeners(container) {
+        if (!container) return;
+        const imgs = container.querySelectorAll('img');
+        imgs.forEach(img => {
+            img.onclick = (e) => {
+                e.stopPropagation();
+                container.querySelectorAll('img').forEach(i => i.classList.remove('active-img-selected'));
+                img.classList.add('active-img-selected');
+                state.activeImgElement = img;
+                showImageBubble(img);
+            };
+        });
+    }
+
+    function showImageBubble(img) {
+        const bubble = document.getElementById('gmail-image-bubble');
+        if (!bubble) return;
+        const rect = img.getBoundingClientRect();
+        bubble.style.left = `${Math.max(10, rect.left + window.scrollX)}px`;
+        bubble.style.top = `${Math.max(10, rect.top + window.scrollY - 36)}px`;
+        bubble.style.display = 'flex';
+    }
+
+    function hideImageBubble() {
+        const bubble = document.getElementById('gmail-image-bubble');
+        if (bubble) bubble.style.display = 'none';
+        if (state.activeImgElement) {
+            state.activeImgElement.classList.remove('active-img-selected');
+            state.activeImgElement = null;
+        }
+    }
+
+    function resizeActiveImage(size) {
+        if (!state.activeImgElement) return;
+        if (size === 'auto') {
+            state.activeImgElement.style.width = 'auto';
+            state.activeImgElement.style.maxWidth = '100%';
+        } else {
+            state.activeImgElement.style.width = size;
+            state.activeImgElement.style.maxWidth = '100%';
+        }
+        hideImageBubble();
+    }
+
+    function removeActiveImage() {
+        if (!state.activeImgElement) return;
+        state.activeImgElement.remove();
+        hideImageBubble();
+        showToast('Image removed', 'info');
+    }
+
+    // --- LINK & CALLOUT BUTTON MODALS ---
+
+    function openLinkModal(context = 'support') {
+        state.activeComposerContext = context;
+        saveSelection();
+        const selText = window.getSelection()?.toString() || '';
+        const txtInput = document.getElementById('link-text-input');
+        const urlInput = document.getElementById('link-url-input');
+
+        if (txtInput) txtInput.value = selText;
+        if (urlInput) urlInput.value = 'https://';
+
+        const modal = document.getElementById('modal-insert-link');
+        if (modal) modal.classList.add('open');
+        setTimeout(() => urlInput?.focus(), 50);
+    }
+
+    function executeInsertLink() {
+        const text = document.getElementById('link-text-input')?.value.trim() || 'Link';
+        const url = document.getElementById('link-url-input')?.value.trim();
+
+        if (!url || url === 'https://') {
+            showToast('Enter a valid link URL', 'error');
+            return;
+        }
+
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvas = document.getElementById(canvasId);
+        if (canvas) canvas.focus();
+
+        restoreSelection();
+        const html = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">${escapeHtml(text)}</a>`;
+        document.execCommand('insertHTML', false, html);
+        closeModals();
+        showToast('Link inserted', 'info');
+    }
+
+    function openButtonModal() {
+        saveSelection();
+        previewCtaButton();
+        const modal = document.getElementById('modal-insert-button');
+        if (modal) modal.classList.add('open');
+    }
+
+    function previewCtaButton() {
+        const text = document.getElementById('cta-btn-text')?.value || 'Access Cortex Portal →';
+        const color = document.getElementById('cta-btn-style')?.value || '#2563eb';
+        const preview = document.getElementById('cta-btn-preview-anchor');
+        if (preview) {
+            preview.textContent = text;
+            preview.style.backgroundColor = color;
+            preview.style.borderColor = color;
+        }
+    }
+
+    function executeInsertButton() {
+        const text = document.getElementById('cta-btn-text')?.value.trim() || 'Action';
+        const url = document.getElementById('cta-btn-url')?.value.trim() || 'https://cortexco.in';
+        const color = document.getElementById('cta-btn-style')?.value || '#2563eb';
+
+        const canvas = document.getElementById('bcast-editor-canvas');
+        if (canvas) canvas.focus();
+        restoreSelection();
+
+        const html = `
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 22px 0;">
+                <tr>
+                    <td align="center" style="border-radius: 6px; background: ${color};">
+                        <a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="background: ${color}; border: 1px solid ${color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.2; text-align: center; text-decoration: none; display: inline-block; border-radius: 6px; font-weight: 600; padding: 12px 24px; color: #ffffff;">${escapeHtml(text)}</a>
+                    </td>
+                </tr>
+            </table>
+        `;
+        document.execCommand('insertHTML', false, html);
+        closeModals();
+        showToast('Button inserted', 'info');
+    }
+
+    // --- COLOR PALETTE & EMOJIS ---
+
+    const COLOR_PALETTE = [
+        '#000000', '#475569', '#94a3b8', '#ffffff',
+        '#ef4444', '#f97316', '#eab308', '#22c55e',
+        '#06b6d4', '#3b82f6', '#6366f1', '#a855f7',
+        '#ec4899', '#14b8a6', '#84cc16', '#f43f5e'
+    ];
+
+    const EMOJI_LIST = [
+        '👋', '👍', '🚀', '⚡', '🔒', '📦', '📧', '✅',
+        '💡', '🔥', '🎯', '🤝', '📊', '🛠️', '🙌', '❤️',
+        '💻', '🛡️', '🌐', '📢', '🔑', '⏱️', '✨', '🎉'
+    ];
+
+    function toggleColorPalette(context, btnEl) {
+        state.activeComposerContext = context;
+        saveSelection();
+        const popover = document.getElementById('gmail-color-popover');
+        if (!popover) return;
+
+        if (popover.style.display === 'block') {
+            popover.style.display = 'none';
+            return;
+        }
+
+        const textGrid = document.getElementById('text-color-grid');
+        const bgGrid = document.getElementById('bg-color-grid');
+
+        if (textGrid) {
+            textGrid.innerHTML = COLOR_PALETTE.map(c => `
+                <div class="color-swatch" style="background: ${c};" onclick="window.app.applyColor('${c}', 'text')" title="${c}"></div>
+            `).join('');
+        }
+        if (bgGrid) {
+            bgGrid.innerHTML = COLOR_PALETTE.map(c => `
+                <div class="color-swatch" style="background: ${c};" onclick="window.app.applyColor('${c}', 'bg')" title="${c}"></div>
+            `).join('');
+        }
+
+        const rect = btnEl.getBoundingClientRect();
+        popover.style.left = `${Math.max(10, rect.left + window.scrollX - 50)}px`;
+        popover.style.top = `${rect.bottom + window.scrollY + 6}px`;
+        popover.style.display = 'block';
+    }
+
+    function applyColor(color, mode) {
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvas = document.getElementById(canvasId);
+        if (canvas) canvas.focus();
+        restoreSelection();
+
+        if (mode === 'text') {
+            document.execCommand('foreColor', false, color);
+        } else {
+            document.execCommand('hiliteColor', false, color);
+        }
+        const popover = document.getElementById('gmail-color-popover');
+        if (popover) popover.style.display = 'none';
+    }
+
+    function toggleEmojiPicker(context, btnEl) {
+        state.activeComposerContext = context;
+        saveSelection();
+        const popover = document.getElementById('gmail-emoji-popover');
+        if (!popover) return;
+
+        if (popover.style.display === 'block') {
+            popover.style.display = 'none';
+            return;
+        }
+
+        const grid = document.getElementById('emoji-grid');
+        if (grid) {
+            grid.innerHTML = EMOJI_LIST.map(em => `
+                <button type="button" class="emoji-btn" onclick="window.app.insertEmoji('${em}')">${em}</button>
+            `).join('');
+        }
+
+        const rect = btnEl.getBoundingClientRect();
+        popover.style.left = `${Math.max(10, rect.left + window.scrollX - 60)}px`;
+        popover.style.top = `${rect.bottom + window.scrollY + 6}px`;
+        popover.style.display = 'block';
+    }
+
+    function insertEmoji(em) {
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvas = document.getElementById(canvasId);
+        if (canvas) canvas.focus();
+        restoreSelection();
+        document.execCommand('insertText', false, em);
+        const popover = document.getElementById('gmail-emoji-popover');
+        if (popover) popover.style.display = 'none';
+    }
+
+    // --- CANVAS DRAG & DROP AND CLIPBOARD PASTE SETUP ---
+
+    function setupCanvasDragAndDrop(containerId, canvasId, dropOverlayId) {
+        const container = document.getElementById(containerId);
+        const canvas = document.getElementById(canvasId);
+        const overlay = document.getElementById(dropOverlayId);
+        if (!container || !canvas) return;
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            container.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (overlay) overlay.classList.add('active');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            container.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (overlay) overlay.classList.remove('active');
+            }, false);
+        });
+
+        container.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = Array.from(dt.files || []);
+            if (files.length === 0) return;
+
+            files.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(evt) {
+                        canvas.focus();
+                        const imgHtml = `<img src="${evt.target.result}" alt="${escapeHtml(file.name)}" style="max-width: 100%; height: auto; border-radius: 6px; margin: 10px 0; display: inline-block;" />`;
+                        document.execCommand('insertHTML', false, imgHtml);
+                        attachImageBubbleListeners(canvas);
+                        showToast(`Inserted photo "${file.name}"`, 'success');
+                    };
+                    reader.readAsDataURL(file);
+                } else if (containerId.includes('supp')) {
+                    const reader = new FileReader();
+                    reader.onload = function(evt) {
+                        state.supportAttachments.push({
+                            filename: file.name,
+                            content: evt.target.result.split(',')[1],
+                            sizeStr: formatBytes(file.size),
+                            content_type: file.type || 'application/octet-stream'
+                        });
+                        renderAttachedFileChips();
+                        showToast(`Attached file "${file.name}"`, 'info');
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }, false);
+
+        canvas.addEventListener('focus', () => {
+            try {
+                document.execCommand('defaultParagraphSeparator', false, 'div');
+            } catch (_) {}
+        });
+
+        canvas.addEventListener('paste', (e) => {
+            const clipboardData = e.clipboardData;
+            if (!clipboardData) return;
+            const items = Array.from(clipboardData.items || []);
+            const imageItem = items.find(item => item.type.startsWith('image/'));
+
+            if (imageItem) {
+                e.preventDefault();
+                const blob = imageItem.getAsFile();
+                if (!blob) return;
+
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    canvas.focus();
+                    const imgHtml = `<img src="${evt.target.result}" alt="Pasted Image" style="max-width: 100%; height: auto; border-radius: 6px; margin: 8px 0; display: inline-block;" />`;
+                    document.execCommand('insertHTML', false, imgHtml);
+                    attachImageBubbleListeners(canvas);
+                    showToast('Pasted image inserted inline', 'success');
+                };
+                reader.readAsDataURL(blob);
+                return;
+            }
+
+            // Clean Plain-Text Paste: Prevent double-spacing and excessive empty lines
+            const text = clipboardData.getData('text/plain');
+            if (text && (!clipboardData.getData('text/html') || !clipboardData.getData('text/html').includes('<table'))) {
+                e.preventDefault();
+                // Normalize newlines and collapse 3+ consecutive blank lines down to 2 (one blank line between paragraphs)
+                const normalized = text
+                    .replace(/\r\n/g, '\n')
+                    .replace(/\r/g, '\n')
+                    .replace(/\n{3,}/g, '\n\n')
+                    .trim();
+
+                const lines = normalized.split('\n');
+                const html = lines.map(line => {
+                    const trimmed = line.trim();
+                    if (!trimmed) {
+                        return '<div><br></div>';
+                    }
+                    return `<div>${escapeHtml(line)}</div>`;
+                }).join('');
+
+                document.execCommand('insertHTML', false, html);
+                return;
+            }
+        });
+
+        canvas.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                if (containerId.includes('bcast')) {
+                    submitBroadcast(true);
+                } else {
+                    sendSupportEmail();
+                }
+            } else if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                openLinkModal(containerId.includes('bcast') ? 'broadcast' : 'support');
+            }
+        });
+
+        attachImageBubbleListeners(canvas);
+    }
+
+    // --- BROADCAST COMPOSER & HISTORY ---
+
+    function switchBroadcastSubTab(subTab) {
+        state.broadcastSubTab = subTab;
+        const tabs = ['audiences', 'compose', 'history'];
+        tabs.forEach(t => {
+            const btn = document.getElementById(`bcast-tabbtn-${t}`);
+            const view = document.getElementById(`bcast-view-${t}`);
+            if (btn) {
+                if (t === subTab) btn.classList.add('active');
+                else btn.classList.remove('active');
+            }
+            if (view) {
+                view.style.display = t === subTab ? 'block' : 'none';
+            }
+        });
+
+        if (subTab === 'history') {
+            loadBroadcasts();
+        } else if (subTab === 'compose') {
+            const selectCompose = document.getElementById('bcast-compose-audience');
+            if (selectCompose && state.currentAudienceId) {
+                selectCompose.value = state.currentAudienceId;
+            }
+        }
+    }
+
+    function setBroadcastEditorMode(mode) {
+        state.broadcastEditorMode = mode;
+        const visualBtn = document.getElementById('bcast-mode-visual');
+        const htmlBtn = document.getElementById('bcast-mode-html');
+        const visualCanvas = document.getElementById('bcast-editor-canvas');
+        const rawTextarea = document.getElementById('bcast-editor-raw');
+        const toolbar = document.getElementById('bcast-format-bar');
+
+        if (mode === 'html') {
+            if (visualBtn) visualBtn.classList.remove('active');
+            if (htmlBtn) htmlBtn.classList.add('active');
+            if (rawTextarea && visualCanvas) {
+                rawTextarea.value = visualCanvas.innerHTML.trim();
+                visualCanvas.style.display = 'none';
+                rawTextarea.style.display = 'block';
+            }
+            if (toolbar) toolbar.style.display = 'none';
+        } else {
+            if (visualBtn) visualBtn.classList.add('active');
+            if (htmlBtn) htmlBtn.classList.remove('active');
+            if (rawTextarea && visualCanvas) {
+                visualCanvas.innerHTML = rawTextarea.value.trim();
+                rawTextarea.style.display = 'none';
+                visualCanvas.style.display = 'block';
+            }
+            if (toolbar) toolbar.style.display = 'flex';
+        }
+    }
+
+    function insertMergeTag(tag) {
+        if (state.broadcastEditorMode === 'html') {
+            const textarea = document.getElementById('bcast-editor-raw');
+            if (!textarea) return;
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = textarea.value;
+            textarea.value = text.substring(0, start) + tag + text.substring(end);
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = start + tag.length;
+        } else {
+            const canvas = document.getElementById('bcast-editor-canvas');
+            if (!canvas) return;
+            canvas.focus();
+            document.execCommand('insertText', false, tag);
+        }
+    }
+
+    function resetBroadcastComposer() {
+        if (!confirm('Discard changes and reset the broadcast composer?')) return;
+        const subj = document.getElementById('bcast-subject-input');
+        const pre = document.getElementById('bcast-preview-text-input');
+        const canvas = document.getElementById('bcast-editor-canvas');
+        const raw = document.getElementById('bcast-editor-raw');
+
+        if (subj) subj.value = '';
+        if (pre) pre.value = '';
+        if (canvas) {
+            canvas.innerHTML = '<p>Hello {{{contact.first_name|there}}},</p><p><br></p><hr style="border: none; border-top: 1px solid #334155; margin: 24px 0;"><p style="font-size: 11.5px; color: #64748b; line-height: 1.5;">To stop receiving updates, <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #3b82f6;">unsubscribe here</a>.</p>';
+        }
+        if (raw) raw.value = '';
+        showToast('Broadcast composer reset', 'info');
+    }
+
+    async function submitBroadcast(sendNow) {
+        const audienceSelect = document.getElementById('bcast-compose-audience');
+        const segmentId = audienceSelect?.value;
+        const subject = document.getElementById('bcast-subject-input')?.value.trim();
+        const previewText = document.getElementById('bcast-preview-text-input')?.value.trim();
+
+        let html = '';
+        if (state.broadcastEditorMode === 'html') {
+            html = document.getElementById('bcast-editor-raw')?.value.trim();
+        } else {
+            html = document.getElementById('bcast-editor-canvas')?.innerHTML.trim();
+        }
+
+        if (!segmentId) {
+            showToast('Select a target audience segment', 'error');
+            return;
+        }
+        if (!subject) {
+            showToast('Enter a broadcast subject line', 'error');
+            return;
+        }
+        if (!html) {
+            showToast('Broadcast email body cannot be empty', 'error');
+            return;
+        }
+
+        if (sendNow) {
+            const confirmed = confirm(`Are you sure you want to send this broadcast to all subscribers in this audience?`);
+            if (!confirmed) return;
+        }
+
+        const btn = sendNow ? document.getElementById('btn-send-broadcast-now') : document.getElementById('btn-save-broadcast-draft');
+        const originalText = btn ? btn.innerHTML : '';
+        if (btn) btn.innerHTML = `<span>Processing...</span>`;
+
+        try {
+            const res = await apiRequest('/api/email/broadcasts', 'POST', {
+                name: subject,
+                segmentId,
+                subject,
+                html,
+                previewText: previewText || undefined,
+                send: sendNow
+            });
+
+            if (res.success) {
+                showToast(sendNow ? 'Broadcast queued and sent via Resend!' : 'Broadcast saved as draft', 'success');
+                switchBroadcastSubTab('history');
+            } else {
+                showToast(res.message || 'Failed to submit broadcast', 'error');
+            }
+        } catch (err) {
+            showToast('Error communicating with Resend', 'error');
+        } finally {
+            if (btn) btn.innerHTML = originalText;
+        }
+    }
+
+    async function loadBroadcasts() {
+        const tbody = document.getElementById('broadcasts-history-tbody');
+        if (!tbody) return;
+
+        try {
+            const res = await apiRequest('/api/email/broadcasts');
+            if (res.success && Array.isArray(res.data)) {
+                state.broadcasts = res.data;
+                renderBroadcastsTable();
+            } else {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6">
+                            <div class="table-empty">
+                                <div class="table-empty-text">No broadcasts found in your Resend account.</div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+        } catch (err) {
+            console.error('Failed to load broadcasts:', err);
+        }
+    }
+
+    function renderBroadcastsTable() {
+        const tbody = document.getElementById('broadcasts-history-tbody');
+        if (!tbody) return;
+
+        if (state.broadcasts.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6">
+                        <div class="table-empty">
+                            <div class="table-empty-text">No broadcasts found. Create your first broadcast from the "Compose" tab.</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = state.broadcasts.map(b => {
+            const isSent = b.status === 'sent';
+            const isDraft = b.status === 'draft';
+            const statusClass = isSent ? 'active' : (isDraft ? 'suspended' : 'live');
+            const audienceName = (state.audiences.find(a => a.id === (b.segment_id || b.audience_id))?.name) || 'Audience';
+
+            return `
+                <tr>
+                    <td>
+                        <span style="font-size: 13px; font-weight: 600; color: var(--text-white);">${escapeHtml(b.name || b.subject || 'Broadcast')}</span>
+                        ${b.preview_text ? `<div style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(b.preview_text)}</div>` : ''}
+                    </td>
+                    <td>
+                        <span style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(audienceName)}</span>
+                    </td>
+                    <td>
+                        <span class="status-pill ${statusClass}" style="font-size: 10.5px; padding: 1px 6px;">
+                            <span class="indicator-dot"></span>
+                            <span>${escapeHtml(b.status ? b.status.toUpperCase() : 'SENT')}</span>
+                        </span>
+                    </td>
+                    <td>
+                        <span style="font-size: 11.5px; color: var(--text-primary); font-family: var(--font-mono);">${formatDate(b.sent_at || b.scheduled_at || b.created_at)}</span>
+                    </td>
+                    <td>
+                        <span style="font-size: 11.5px; color: var(--text-muted);">${formatDate(b.created_at)}</span>
+                    </td>
+                    <td class="align-right">
+                        ${isDraft ? `
+                            <button class="btn btn-primary btn-sm" onclick="window.app.sendDraftBroadcast('${escapeHtml(b.id)}')">
+                                Trigger Send
+                            </button>
+                        ` : `
+                            <span class="badge-metric" style="color: var(--emerald);">Dispatched</span>
+                        `}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    async function sendDraftBroadcast(broadcastId) {
+        if (!confirm('Are you sure you want to trigger immediate sending of this draft broadcast?')) return;
+        const res = await apiRequest(`/api/email/broadcasts/${encodeURIComponent(broadcastId)}/send`, 'POST');
+        if (res.success) {
+            showToast('Broadcast triggered successfully!', 'success');
+            await loadBroadcasts();
+        } else {
+            showToast(res.message || 'Failed to trigger broadcast', 'error');
+        }
+    }
+
+    // --- SUPPORT 1-TO-1 EMAIL & REAL-TIME TRACKING ---
+
+    function switchSupportSubTab(subTab) {
+        state.supportSubTab = subTab;
+        const btnCompose = document.getElementById('supp-tabbtn-compose');
+        const btnTracker = document.getElementById('supp-tabbtn-tracker');
+        const viewCompose = document.getElementById('supp-view-compose');
+        const viewTracker = document.getElementById('supp-view-tracker');
+
+        if (subTab === 'compose') {
+            if (btnCompose) btnCompose.classList.add('active');
+            if (btnTracker) btnTracker.classList.remove('active');
+            if (viewCompose) viewCompose.style.display = 'block';
+            if (viewTracker) viewTracker.style.display = 'none';
+        } else {
+            if (btnCompose) btnCompose.classList.remove('active');
+            if (btnTracker) btnTracker.classList.add('active');
+            if (viewCompose) viewCompose.style.display = 'none';
+            if (viewTracker) viewTracker.style.display = 'block';
+            loadSentHistory();
+        }
+    }
+
+    function handleFileSelect(event) {
+        const files = Array.from(event.target?.files || []);
+        if (files.length === 0) return;
+
+        files.forEach(file => {
+            if (file.size > 15 * 1024 * 1024) {
+                showToast(`File "${file.name}" exceeds 15MB limit`, 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const base64Data = e.target.result.split(',')[1];
+                state.supportAttachments.push({
+                    filename: file.name,
+                    content: base64Data,
+                    sizeStr: formatBytes(file.size),
+                    content_type: file.type || 'application/octet-stream'
+                });
+                renderAttachedFileChips();
+            };
+            reader.readAsDataURL(file);
+        });
+        event.target.value = '';
+    }
+
+    function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function removeAttachedFile(index) {
+        state.supportAttachments.splice(index, 1);
+        renderAttachedFileChips();
+    }
+
+    function renderAttachedFileChips() {
+        const tray = document.getElementById('supp-attachments-tray');
+        const container = document.getElementById('supp-attachments-container');
+        if (!tray || !container) return;
+
+        if (state.supportAttachments.length === 0) {
+            tray.style.display = 'none';
+            container.innerHTML = '';
+            return;
+        }
+
+        tray.style.display = 'block';
+        container.innerHTML = state.supportAttachments.map((att, idx) => `
+            <div class="gmail-attach-card">
+                <span class="attach-icon">📎</span>
+                <span class="attach-name" title="${escapeHtml(att.filename)}">${escapeHtml(att.filename)}</span>
+                <span class="attach-size">(${escapeHtml(att.sizeStr)})</span>
+                <span class="attach-remove" onclick="window.app.removeAttachedFile(${idx})" title="Remove attachment">✕</span>
+            </div>
+        `).join('');
+    }
+
+    function clearSupportComposer() {
+        const to = document.getElementById('supp-to-input');
+        const subj = document.getElementById('supp-subject-input');
+        const cc = document.getElementById('supp-cc-input');
+        const bcc = document.getElementById('supp-bcc-input');
+        const canvas = document.getElementById('supp-editor-canvas');
+
+        if (to) to.value = '';
+        if (subj) subj.value = '';
+        if (cc) cc.value = '';
+        if (bcc) bcc.value = '';
+        if (canvas) {
+            canvas.innerHTML = '<p>Hello,</p><p><br></p><p>Best regards,<br><strong>Cortex Technical Support Team</strong><br><span style="color: #64748b; font-size: 12px;">https://cortexco.in</span></p>';
+        }
+        state.supportAttachments = [];
+        renderAttachedFileChips();
+
+        const ccRow = document.getElementById('supp-cc-row');
+        const bccRow = document.getElementById('supp-bcc-row');
+        if (ccRow) ccRow.style.display = 'none';
+        if (bccRow) bccRow.style.display = 'none';
+        document.getElementById('btn-toggle-cc')?.classList.remove('active');
+        document.getElementById('btn-toggle-bcc')?.classList.remove('active');
+
+        const draftStatus = document.getElementById('supp-draft-status');
+        if (draftStatus) draftStatus.textContent = 'Cleared';
+    }
+
+    async function sendSupportEmail() {
+        const to = document.getElementById('supp-to-input')?.value.trim();
+        const subject = document.getElementById('supp-subject-input')?.value.trim();
+        const ccVal = document.getElementById('supp-cc-input')?.value.trim();
+        const bccVal = document.getElementById('supp-bcc-input')?.value.trim();
+        const canvas = document.getElementById('supp-editor-canvas');
+        const html = canvas ? canvas.innerHTML.trim() : '';
+
+        if (!to || !to.includes('@')) {
+            showToast('Enter a valid recipient email address', 'error');
+            document.getElementById('supp-to-input')?.focus();
+            return;
+        }
+        if (!subject) {
+            showToast('Enter an email subject line', 'error');
+            document.getElementById('supp-subject-input')?.focus();
+            return;
+        }
+        if (!html || html === '<p><br></p>') {
+            showToast('Email message content cannot be empty', 'error');
+            if (canvas) canvas.focus();
+            return;
+        }
+
+        const cc = ccVal ? ccVal.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+        const bcc = bccVal ? bccVal.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+
+        const attachments = state.supportAttachments.map(a => ({
+            filename: a.filename,
+            content: a.content,
+            content_type: a.content_type
+        }));
+
+        const btn = document.getElementById('btn-send-support-email');
+        const originalHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.innerHTML = `<span>Sending...</span>`;
+            btn.disabled = true;
+        }
+
+        try {
+            const res = await apiRequest('/api/email/support/send', 'POST', {
+                to,
+                subject,
+                html,
+                cc,
+                bcc,
+                attachments: attachments.length > 0 ? attachments : undefined
+            });
+
+            if (res.success && res.data) {
+                showToast(`Support email sent! ID: ${res.data.id}`, 'success');
+                clearSupportComposer();
+                switchSupportSubTab('tracker');
+            } else {
+                showToast(res.message || 'Failed to dispatch email', 'error');
+            }
+        } catch (err) {
+            showToast('Failed to dispatch support email', 'error');
+        } finally {
+            if (btn) {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+            }
+        }
+    }
+
+    async function loadSentHistory() {
+        const tbody = document.getElementById('tracker-table-body');
+        if (!tbody) return;
+
+        try {
+            const res = await apiRequest('/api/email/support/history?limit=50');
+            if (res.success && Array.isArray(res.data)) {
+                state.sentEmails = res.data;
+                updateTrackerCounts();
+                renderTrackerTable();
+            } else {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6">
+                            <div class="table-empty">
+                                <div class="table-empty-text">No sent emails recorded in Resend.</div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+        } catch (err) {
+            console.error('Failed to load sent history:', err);
+        }
+    }
+
+    function updateTrackerCounts() {
+        const totalEl = document.getElementById('count-tracker-all');
+        const delEl = document.getElementById('count-tracker-delivered');
+        const openEl = document.getElementById('count-tracker-opened');
+        const bncEl = document.getElementById('count-tracker-bounced');
+
+        if (totalEl) totalEl.textContent = state.sentEmails.length;
+        if (delEl) delEl.textContent = state.sentEmails.filter(e => e.last_event === 'delivered').length;
+        if (openEl) openEl.textContent = state.sentEmails.filter(e => e.last_event === 'opened' || e.last_event === 'clicked').length;
+        if (bncEl) bncEl.textContent = state.sentEmails.filter(e => e.last_event === 'bounced' || e.last_event === 'complained').length;
+    }
+
+    function filterTracker(status, btnEl) {
+        state.trackerFilter = status;
+        document.querySelectorAll('[data-tracker-filter]').forEach(b => b.classList.remove('active'));
+        if (btnEl) btnEl.classList.add('active');
+        renderTrackerTable();
+    }
+
+    function renderTrackerTable() {
+        const tbody = document.getElementById('tracker-table-body');
+        if (!tbody) return;
+
+        let filtered = state.sentEmails;
+        if (state.trackerFilter && state.trackerFilter !== 'all') {
+            if (state.trackerFilter === 'opened') {
+                filtered = filtered.filter(e => e.last_event === 'opened' || e.last_event === 'clicked');
+            } else if (state.trackerFilter === 'bounced') {
+                filtered = filtered.filter(e => e.last_event === 'bounced' || e.last_event === 'complained');
+            } else {
+                filtered = filtered.filter(e => e.last_event === state.trackerFilter);
+            }
+        }
+
+        const search = (document.getElementById('tracker-search-input')?.value || '').toLowerCase().trim();
+        if (search) {
+            filtered = filtered.filter(e => {
+                const recipients = (Array.isArray(e.to) ? e.to.join(',') : String(e.to || '')).toLowerCase();
+                const subj = (e.subject || '').toLowerCase();
+                const id = (e.id || '').toLowerCase();
+                return recipients.includes(search) || subj.includes(search) || id.includes(search);
+            });
+        }
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6">
+                        <div class="table-empty">
+                            <div class="table-empty-text">No delivery telemetry matches your filter.</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(item => {
+            const status = (item.last_event || 'sent').toLowerCase();
+            const recipientStr = Array.isArray(item.to) ? item.to.join(', ') : (item.to || '---');
+            const pillClass = status;
+
+            return `
+                <tr>
+                    <td>
+                        <span style="font-size: 12.5px; font-weight: 500; color: var(--text-white);">${escapeHtml(recipientStr)}</span>
+                    </td>
+                    <td>
+                        <span style="font-size: 12.5px; color: var(--text-primary);">${escapeHtml(item.subject || '(No Subject)')}</span>
+                    </td>
+                    <td>
+                        <span style="font-size: 11.5px; font-family: var(--font-mono); color: var(--text-secondary);">${formatDate(item.created_at)}</span>
+                    </td>
+                    <td>
+                        <span class="status-pill ${pillClass}" style="font-size: 10.5px; padding: 2px 7px;">
+                            <span class="indicator-dot"></span>
+                            <span style="text-transform: capitalize;">${escapeHtml(status)}</span>
+                        </span>
+                    </td>
+                    <td>
+                        <span class="key-pill" style="font-size: 10.5px; cursor: pointer;" title="Click to copy Resend Email ID" onclick="window.app.copyKey('${escapeHtml(item.id)}', this)">
+                            ${escapeHtml(item.id ? item.id.substring(0, 18) + '...' : '---')}
+                        </span>
+                    </td>
+                    <td class="align-right">
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.inspectEmailDelivery('${escapeHtml(item.id)}')">
+                            Diagnostics
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    async function inspectEmailDelivery(emailId) {
+        if (!emailId || !emailId.trim()) return;
+        emailId = emailId.trim();
+
+        try {
+            const res = await apiRequest(`/api/email/support/status/${encodeURIComponent(emailId)}`);
+            if (res.success && res.data) {
+                const data = res.data;
+                const modal = document.getElementById('modal-email-status-inspect');
+                const pill = document.getElementById('inspect-status-pill');
+                const timeEl = document.getElementById('inspect-timestamp');
+                const idEl = document.getElementById('inspect-email-id');
+                const toEl = document.getElementById('inspect-recipient');
+                const fromEl = document.getElementById('inspect-sender');
+                const subjEl = document.getElementById('inspect-subject');
+                const pre = document.getElementById('inspect-json-raw');
+
+                if (pill) {
+                    const st = (data.last_event || 'sent').toLowerCase();
+                    pill.className = `status-pill ${st}`;
+                    pill.innerHTML = `<span class="indicator-dot"></span><span style="text-transform: capitalize;">${escapeHtml(st)}</span>`;
+                }
+
+                if (timeEl) timeEl.textContent = formatDate(data.created_at);
+                if (idEl) idEl.textContent = data.id || emailId;
+                if (toEl) toEl.textContent = Array.isArray(data.to) ? data.to.join(', ') : (data.to || '---');
+                if (fromEl) fromEl.textContent = data.from || '---';
+                if (subjEl) subjEl.textContent = data.subject || '---';
+                if (pre) pre.textContent = JSON.stringify(data, null, 2);
+
+                if (modal) modal.classList.add('open');
+            } else {
+                showToast(res.message || 'Could not find email status for given ID', 'error');
+            }
+        } catch (err) {
+            showToast('Failed to retrieve delivery diagnostics from Resend', 'error');
+        }
+    }
+
+    function queryEmailStatusById() {
+        const input = document.getElementById('supp-quick-id-input');
+        const id = input?.value.trim();
+        if (!id) {
+            showToast('Please paste a Resend Email ID', 'error');
+            return;
+        }
+        inspectEmailDelivery(id);
+    }
+
+    // --- INTERACTIVE LIVE PREVIEW MODAL ---
+
+    function openLivePreview(type = 'broadcast') {
+        state.currentPreviewType = type;
+        const modal = document.getElementById('modal-email-preview');
+        const fromHeader = document.getElementById('preview-from-header');
+        const toHeader = document.getElementById('preview-to-header');
+        const subjHeader = document.getElementById('preview-subject-header');
+        const preheaderRow = document.getElementById('preview-preheader-row');
+        const preheaderHeader = document.getElementById('preview-preheader-header');
+        const iframe = document.getElementById('preview-render-frame');
+
+        let fromText = '';
+        let toText = '';
+        let subjText = '';
+        let preheaderText = '';
+        let bodyHtml = '';
+
+        if (type === 'broadcast') {
+            fromText = 'Cortex <no-reply@cortexco.in>';
+            const audName = state.audiences.find(a => a.id === state.currentAudienceId)?.name || 'Target Audience';
+            toText = `${audName} (All Active Subscribers)`;
+            subjText = document.getElementById('bcast-subject-input')?.value.trim() || 'Untitled Broadcast';
+            preheaderText = document.getElementById('bcast-preview-text-input')?.value.trim() || '';
+
+            if (state.broadcastEditorMode === 'html') {
+                bodyHtml = document.getElementById('bcast-editor-raw')?.value.trim() || '<p>Empty broadcast body</p>';
+            } else {
+                bodyHtml = document.getElementById('bcast-editor-canvas')?.innerHTML.trim() || '<p>Empty broadcast body</p>';
+            }
+
+            // Substitute sample values for preview merge tags
+            bodyHtml = bodyHtml
+                .replace(/\{\{\{contact\.first_name\|?.*?\}\}\}/g, 'Alex')
+                .replace(/\{\{\{contact\.last_name\}\}\}/g, 'Vance')
+                .replace(/\{\{\{contact\.email\}\}\}/g, 'alex.vance@example.com')
+                .replace(/\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}/g, '#unsubscribe');
+
+        } else {
+            fromText = 'Cortex Support <support@cortexco.in>';
+            toText = document.getElementById('supp-to-input')?.value.trim() || 'client@company.com';
+            subjText = document.getElementById('supp-subject-input')?.value.trim() || 'Cortex Support Inquiry';
+            preheaderText = '';
+            bodyHtml = document.getElementById('supp-editor-canvas')?.innerHTML.trim() || '<p>Empty email body</p>';
+        }
+
+        if (fromHeader) fromHeader.textContent = fromText;
+        if (toHeader) toHeader.textContent = toText;
+        if (subjHeader) subjHeader.textContent = subjText;
+
+        if (preheaderRow && preheaderHeader) {
+            if (preheaderText) {
+                preheaderHeader.textContent = preheaderText;
+                preheaderRow.style.display = 'flex';
+            } else {
+                preheaderRow.style.display = 'none';
+            }
+        }
+
+        if (iframe) {
+            const styledDocument = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body {
+                            margin: 0;
+                            padding: 24px;
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                            font-size: 14px;
+                            line-height: 1.6;
+                            color: #1e293b;
+                            background: #ffffff;
+                        }
+                        div, p { margin: 0; padding: 0; line-height: 1.5; }
+                        h1, h2, h3 { color: #0f172a; margin: 18px 0 10px 0; }
+                        blockquote {
+                            border-left: 3px solid #3b82f6;
+                            padding-left: 12px;
+                            margin: 14px 0;
+                            color: #64748b;
+                        }
+                        ul, ol { margin: 10px 0 14px 24px; }
+                        li { margin-bottom: 4px; }
+                        img { max-width: 100%; height: auto; border-radius: 4px; }
+                    </style>
+                </head>
+                <body>
+                    ${bodyHtml}
+                </body>
+                </html>
+            `;
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (doc) {
+                doc.open();
+                doc.write(styledDocument);
+                doc.close();
+            }
+        }
+
+        setPreviewDevice('desktop');
+        if (modal) modal.classList.add('open');
+    }
+
+    function setPreviewDevice(device) {
+        state.previewDevice = device;
+        const wrapper = document.getElementById('preview-canvas-wrapper');
+        const btnDesktop = document.getElementById('btn-preview-desktop');
+        const btnMobile = document.getElementById('btn-preview-mobile');
+
+        if (device === 'mobile') {
+            if (wrapper) wrapper.classList.add('mobile-frame');
+            if (btnDesktop) btnDesktop.classList.remove('active');
+            if (btnMobile) btnMobile.classList.add('active');
+        } else {
+            if (wrapper) wrapper.classList.remove('mobile-frame');
+            if (btnDesktop) btnDesktop.classList.add('active');
+            if (btnMobile) btnMobile.classList.remove('active');
+        }
+    }
+
     function closeModals() {
         document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
     }
@@ -1346,6 +3105,8 @@
                 if (e.key === '3') switchTab('devices');
                 if (e.key === '4') switchTab('telemetry');
                 if (e.key === '5') switchTab('clients');
+                if (e.key === '6') switchTab('broadcasts');
+                if (e.key === '7') switchTab('support-mail');
             }
         });
 
@@ -1525,7 +3286,12 @@
         // Master Session Authentication Form & Logout Button
         const formLogin = document.getElementById('form-admin-login');
         if (formLogin) {
-            formLogin.addEventListener('submit', handleLoginSubmit);
+            formLogin.addEventListener('submit', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleLoginSubmit(e);
+                return false;
+            });
         }
 
         const btnLogout = document.getElementById('btn-logout');
@@ -1536,6 +3302,227 @@
                 handleLogout();
             });
         }
+
+        // ─── RESEND BROADCASTS & AUDIENCES EVENT LISTENERS ───
+        const bcastAudienceSelect = document.getElementById('bcast-audience-select');
+        if (bcastAudienceSelect) {
+            bcastAudienceSelect.addEventListener('change', async (e) => {
+                state.currentAudienceId = e.target.value;
+                const composeSelect = document.getElementById('bcast-compose-audience');
+                if (composeSelect) composeSelect.value = state.currentAudienceId;
+                updateAudienceMetrics();
+                await loadContacts(state.currentAudienceId);
+            });
+        }
+
+        const btnOpenNewAudience = document.getElementById('btn-open-new-audience');
+        if (btnOpenNewAudience) {
+            btnOpenNewAudience.addEventListener('click', () => {
+                const modal = document.getElementById('modal-new-audience');
+                if (modal) modal.classList.add('open');
+            });
+        }
+
+        const formNewAudience = document.getElementById('form-new-audience');
+        if (formNewAudience) {
+            formNewAudience.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const nameInput = document.getElementById('new-audience-name');
+                const name = nameInput?.value.trim();
+                if (!name) return;
+
+                const submitBtn = document.getElementById('btn-submit-new-audience');
+                if (submitBtn) submitBtn.disabled = true;
+
+                try {
+                    const res = await apiRequest('/api/email/segments', 'POST', { name });
+                    if (res.success) {
+                        showToast(`Audience "${name}" created in Resend`, 'success');
+                        closeModals();
+                        formNewAudience.reset();
+                        await loadAudiences();
+                    } else {
+                        showToast(res.message || 'Failed to create audience', 'error');
+                    }
+                } catch {
+                    showToast('Failed to connect to Resend API', 'error');
+                } finally {
+                    if (submitBtn) submitBtn.disabled = false;
+                }
+            });
+        }
+
+        const btnDeleteAudience = document.getElementById('btn-delete-audience');
+        if (btnDeleteAudience) {
+            btnDeleteAudience.addEventListener('click', deleteCurrentAudience);
+        }
+
+        const contactsSearchInput = document.getElementById('contacts-search-input');
+        if (contactsSearchInput) {
+            contactsSearchInput.addEventListener('input', renderContactsTable);
+        }
+
+        const contactsStatusFilter = document.getElementById('contacts-status-filter');
+        if (contactsStatusFilter) {
+            contactsStatusFilter.addEventListener('change', renderContactsTable);
+        }
+
+        const btnOpenAddContact = document.getElementById('btn-open-add-contact');
+        if (btnOpenAddContact) {
+            btnOpenAddContact.addEventListener('click', () => {
+                const modal = document.getElementById('modal-add-contact');
+                if (modal) modal.classList.add('open');
+            });
+        }
+
+        const formAddContact = document.getElementById('form-add-contact');
+        if (formAddContact) {
+            formAddContact.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('contact-email')?.value.trim();
+                const firstName = document.getElementById('contact-firstname')?.value.trim();
+                const lastName = document.getElementById('contact-lastname')?.value.trim();
+                const unsubscribed = document.getElementById('contact-unsubscribed')?.checked;
+
+                if (!email) {
+                    showToast('Valid email is required', 'error');
+                    return;
+                }
+
+                const submitBtn = document.getElementById('btn-submit-contact');
+                if (submitBtn) submitBtn.disabled = true;
+
+                try {
+                    const res = await apiRequest('/api/email/contacts', 'POST', {
+                        email,
+                        firstName,
+                        lastName,
+                        unsubscribed,
+                        segmentId: state.currentAudienceId || undefined
+                    });
+
+                    if (res.success) {
+                        showToast('Subscriber saved to Resend', 'success');
+                        closeModals();
+                        formAddContact.reset();
+                        await loadContacts(state.currentAudienceId);
+                    } else {
+                        showToast(res.message || 'Failed to add contact', 'error');
+                    }
+                } catch {
+                    showToast('Error communicating with Resend', 'error');
+                } finally {
+                    if (submitBtn) submitBtn.disabled = false;
+                }
+            });
+        }
+
+        const btnOpenImportCsv = document.getElementById('btn-open-import-csv');
+        if (btnOpenImportCsv) {
+            btnOpenImportCsv.addEventListener('click', () => {
+                const modal = document.getElementById('modal-import-csv');
+                const previewSection = document.getElementById('csv-preview-section');
+                const progressSection = document.getElementById('csv-progress-section');
+                const btnImport = document.getElementById('btn-execute-csv-import');
+                if (previewSection) previewSection.style.display = 'none';
+                if (progressSection) progressSection.style.display = 'none';
+                if (btnImport) btnImport.disabled = true;
+                state.parsedCsvContacts = [];
+                if (modal) modal.classList.add('open');
+            });
+        }
+
+        const btnExportCsv = document.getElementById('btn-export-csv');
+        if (btnExportCsv) {
+            btnExportCsv.addEventListener('click', exportContactsCsv);
+        }
+
+        const btnRefreshBroadcasts = document.getElementById('btn-refresh-broadcasts');
+        if (btnRefreshBroadcasts) {
+            btnRefreshBroadcasts.addEventListener('click', async () => {
+                await checkResendStatus();
+                await loadAudiences();
+                await loadBroadcasts();
+                showToast('Resend audiences and broadcasts synchronized', 'info');
+            });
+        }
+
+        // CSV Drag and Drop Zone Listeners
+        const csvDropZone = document.getElementById('csv-drop-zone');
+        if (csvDropZone) {
+            ['dragenter', 'dragover'].forEach(eventName => {
+                csvDropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    csvDropZone.classList.add('dragover');
+                }, false);
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                csvDropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    csvDropZone.classList.remove('dragover');
+                }, false);
+            });
+            csvDropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files && files.length > 0) {
+                    handleCsvSelected({ target: { files: [files[0]] } });
+                }
+            }, false);
+        }
+
+        // ─── GMAIL COMPOSER CANVAS DRAG & DROP & PHOTO UPLOADER ───
+        setupCanvasDragAndDrop('supp-body-container', 'supp-editor-canvas', 'supp-drop-overlay');
+        setupCanvasDragAndDrop('bcast-body-container', 'bcast-editor-canvas', 'bcast-drop-overlay');
+
+        const photoDropZone = document.getElementById('photo-drop-zone');
+        if (photoDropZone) {
+            ['dragenter', 'dragover'].forEach(eventName => {
+                photoDropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    photoDropZone.classList.add('dragover');
+                }, false);
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                photoDropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    photoDropZone.classList.remove('dragover');
+                }, false);
+            });
+            photoDropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files && files.length > 0) {
+                    handlePhotoFileSelected({ target: { files: [files[0]] } });
+                }
+            }, false);
+        }
+
+        // Global dismissal for popovers and floating bubble
+        document.addEventListener('click', (e) => {
+            const colorPopover = document.getElementById('gmail-color-popover');
+            if (colorPopover && colorPopover.style.display === 'block') {
+                if (!colorPopover.contains(e.target) && !e.target.closest('[onclick*="toggleColorPalette"]')) {
+                    colorPopover.style.display = 'none';
+                }
+            }
+            const emojiPopover = document.getElementById('gmail-emoji-popover');
+            if (emojiPopover && emojiPopover.style.display === 'block') {
+                if (!emojiPopover.contains(e.target) && !e.target.closest('[onclick*="toggleEmojiPicker"]')) {
+                    emojiPopover.style.display = 'none';
+                }
+            }
+            const imgBubble = document.getElementById('gmail-image-bubble');
+            if (imgBubble && imgBubble.style.display === 'flex') {
+                if (!imgBubble.contains(e.target) && e.target !== state.activeImgElement) {
+                    hideImageBubble();
+                }
+            }
+        });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1568,7 +3555,8 @@
             loadLicenses(),
             loadClients(),
             loadGlobalDevices(),
-            loadLogs()
+            loadLogs(),
+            checkResendStatus()
         ]);
     }
 
@@ -1589,7 +3577,63 @@
         openEditClientModal,
         logout: handleLogout,
         checkAuthSession,
-        handleLoginSubmit
+        handleLoginSubmit,
+
+        // Gmail Suite Formatting & Compose
+        applyFontFamily,
+        applyFontSize,
+        toggleFormatBar,
+        toggleComposerExpand,
+        toggleCc,
+        toggleBcc,
+        togglePreheader,
+        openPhotoModal,
+        switchPhotoTab,
+        handlePhotoFileSelected,
+        handlePhotoUrlInput,
+        clearPhotoSelection,
+        executeInsertPhoto,
+        resizeActiveImage,
+        removeActiveImage,
+        openLinkModal,
+        executeInsertLink,
+        openButtonModal,
+        previewCtaButton,
+        executeInsertButton,
+        toggleColorPalette,
+        applyColor,
+        toggleEmojiPicker,
+        insertEmoji,
+        sendSupportEmail,
+        resetBroadcastComposer,
+
+        // Resend Broadcasts & Audiences API
+        switchBroadcastSubTab,
+        setBroadcastEditorMode,
+        insertMergeTag,
+        submitBroadcast,
+        loadBroadcasts,
+        sendDraftBroadcast,
+        deleteContact,
+        handleCsvSelected,
+        downloadSampleCsv,
+        executeCsvImport,
+        exportContactsCsv,
+
+        // Resend Support 1-to-1 Mail API
+        switchSupportSubTab,
+        handleFileSelect,
+        removeAttachedFile,
+        clearSupportComposer,
+        loadSentHistory,
+        renderTrackerTable,
+        filterTracker,
+        inspectEmailDelivery,
+        queryEmailStatusById,
+
+        // Interactive Live Preview
+        openLivePreview,
+        setPreviewDevice
     };
 
     if (document.readyState === 'loading') {

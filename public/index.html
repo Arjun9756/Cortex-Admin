@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=2.5.0">
+    <link rel="stylesheet" href="/css/style.css?v=3.6.2">
 </head>
 <body>
     <div class="app-container">
@@ -41,6 +41,18 @@
                 <button class="nav-link" data-tab="clients" id="nav-clients">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                     <span>Clients</span>
+                </button>
+
+                <div class="nav-divider" style="height: 1px; background: var(--border-subtle); margin: 8px 12px 6px;"></div>
+                <div class="nav-heading" style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); padding: 4px 14px 2px;">Comms &amp; Outreach</div>
+
+                <button class="nav-link" data-tab="broadcasts" id="nav-broadcasts">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
+                    <span>Broadcasts</span>
+                </button>
+                <button class="nav-link" data-tab="support-mail" id="nav-support-mail">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                    <span>Support Mail</span>
                 </button>
             </nav>
 
@@ -432,6 +444,709 @@
                     </div>
                 </section>
 
+                <!-- ═════════════════════════════════════════════════════════════
+                     TAB 6: RESEND BROADCASTS & AUDIENCES ENGINE
+                     ═════════════════════════════════════════════════════════════ -->
+                <section class="tab-pane" id="pane-broadcasts">
+                    <!-- Resend Key Warning Banner (dynamically toggled) -->
+                    <div id="resend-api-banner" class="config-alert-banner" style="display: none;">
+                        <div class="banner-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        </div>
+                        <div class="banner-content">
+                            <div class="banner-title" id="resend-banner-title">Resend API Key Required</div>
+                            <div class="banner-desc" id="resend-banner-desc">Set <code>RESEND_API_KEY=re_...</code> in your <code>.env</code> file to enable marketing broadcasts and 1-to-1 support delivery.</div>
+                        </div>
+                    </div>
+
+                    <!-- Broadcasts Workspace Navigation Ribbon -->
+                    <div class="workspace-ribbon">
+                        <div class="ribbon-left">
+                            <button class="filter-pill active" id="bcast-tabbtn-audiences" onclick="window.app.switchBroadcastSubTab('audiences')">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                                <span>Audiences &amp; Contacts</span>
+                            </button>
+                            <button class="filter-pill" id="bcast-tabbtn-compose" onclick="window.app.switchBroadcastSubTab('compose')">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                <span>Compose Broadcast</span>
+                            </button>
+                            <button class="filter-pill" id="bcast-tabbtn-history" onclick="window.app.switchBroadcastSubTab('history')">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                <span>Broadcast History</span>
+                            </button>
+                        </div>
+                        <div class="ribbon-right">
+                            <span class="sender-identity-pill" title="Verified Resend Broadcast Sender">
+                                <span class="indicator-dot"></span>
+                                <span>no-reply@cortexco.in</span>
+                            </span>
+                            <button class="btn btn-secondary btn-sm" id="btn-refresh-broadcasts" title="Reload Resend data">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                <span>Sync Resend</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- SUB-VIEW 1: AUDIENCES & CONTACTS -->
+                    <div id="bcast-view-audiences" class="bcast-subview">
+                        <!-- Audience Selector Header -->
+                        <div class="audience-control-card">
+                            <div class="audience-picker-col">
+                                <label for="bcast-audience-select" style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); letter-spacing: 0.05em;">Target Audience / Segment</label>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+                                    <select id="bcast-audience-select" class="form-select" style="min-width: 240px;">
+                                        <option value="">Loading audiences from Resend...</option>
+                                    </select>
+                                    <button class="btn btn-secondary btn-sm" id="btn-open-new-audience" title="Create Audience in Resend">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                        <span>New Audience</span>
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" id="btn-delete-audience" style="color: var(--ruby);" title="Delete selected audience from Resend">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="audience-metrics-strip">
+                                <div class="audience-metric">
+                                    <span class="metric-label">Audience ID</span>
+                                    <span class="metric-val font-mono" id="bcast-metric-id" style="font-size: 11px; color: var(--text-muted);">---</span>
+                                </div>
+                                <div class="audience-metric">
+                                    <span class="metric-label">Subscribers</span>
+                                    <span class="metric-val" id="bcast-metric-count">0</span>
+                                </div>
+                            </div>
+                            <div class="audience-actions-col" style="margin-left: auto; display: flex; gap: 8px; align-items: flex-end;">
+                                <button class="btn btn-secondary btn-sm" id="btn-export-csv" title="Download contacts as CSV">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    <span>Export CSV</span>
+                                </button>
+                                <button class="btn btn-secondary btn-sm" id="btn-open-import-csv">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                    <span>Import CSV</span>
+                                </button>
+                                <button class="btn btn-primary btn-sm" id="btn-open-add-contact">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                    <span>Add Contact</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Contacts Filter Bar -->
+                        <div class="workspace-ribbon" style="border-top: none; background: transparent; padding: 10px 0 12px;">
+                            <div class="ribbon-left">
+                                <span style="font-size: 12px; font-weight: 600; color: var(--text-white);">Audience Subscribers</span>
+                                <span class="count" id="count-contacts-total" style="background: var(--panel-elevated); padding: 2px 7px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border);">0</span>
+                            </div>
+                            <div class="ribbon-right">
+                                <div class="search-field">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    <input type="text" id="contacts-search-input" placeholder="Search subscribers by email or name...">
+                                </div>
+                                <select id="contacts-status-filter" class="form-select" style="max-width: 140px; padding: 5px 8px; font-size: 12px;">
+                                    <option value="all">All Subscribers</option>
+                                    <option value="subscribed">Subscribed Only</option>
+                                    <option value="unsubscribed">Unsubscribed</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Contacts Table Viewport -->
+                        <div class="table-viewport">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Email Address</th>
+                                        <th>First Name</th>
+                                        <th>Last Name</th>
+                                        <th>Subscription Status</th>
+                                        <th>Enrolled Date</th>
+                                        <th class="align-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="contacts-table-body">
+                                    <tr>
+                                        <td colspan="6">
+                                            <div class="table-empty">
+                                                <div class="table-empty-text">Loading contacts directly from Resend...</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- SUB-VIEW 2: COMPOSE BROADCAST (Gmail / Superhuman Studio) -->
+                    <div id="bcast-view-compose" class="bcast-subview" style="display: none;">
+                        <div class="gmail-compose-window" id="bcast-compose-window">
+                            <!-- Gmail Titlebar / Header -->
+                            <div class="gmail-compose-header">
+                                <div class="gmail-header-left">
+                                    <span class="gmail-header-title">New Broadcast Campaign</span>
+                                    <span class="gmail-sender-badge" title="Official Resend Broadcast Channel">
+                                        <span class="indicator-dot"></span>
+                                        <span>no-reply@cortexco.in</span>
+                                    </span>
+                                </div>
+                                <div class="gmail-header-right">
+                                    <div class="gmail-mode-tabs">
+                                        <button type="button" class="g-mode-btn active" id="bcast-mode-visual" onclick="window.app.setBroadcastEditorMode('visual')">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                            <span>Visual Editor</span>
+                                        </button>
+                                        <button type="button" class="g-mode-btn" id="bcast-mode-html" onclick="window.app.setBroadcastEditorMode('html')">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                                            <span>Raw HTML</span>
+                                        </button>
+                                    </div>
+                                    <button type="button" class="gmail-window-btn" title="Toggle Expanded Canvas" onclick="window.app.toggleComposerExpand('broadcast')">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Gmail Envelope Fields -->
+                            <div class="gmail-envelope-container">
+                                <!-- From Row -->
+                                <div class="gmail-field-row from-row">
+                                    <span class="gmail-field-label">From</span>
+                                    <div class="gmail-sender-display">
+                                        <strong>Cortex</strong> &lt;no-reply@cortexco.in&gt;
+                                        <span class="gmail-verified-tag">✓ Verified Domain</span>
+                                    </div>
+                                </div>
+
+                                <!-- To Audience Row -->
+                                <div class="gmail-field-row to-row">
+                                    <span class="gmail-field-label">To</span>
+                                    <div class="gmail-audience-pill-wrapper">
+                                        <select id="bcast-compose-audience" class="gmail-audience-select" required>
+                                            <option value="">Select target audience...</option>
+                                        </select>
+                                    </div>
+                                    <div class="gmail-field-actions">
+                                        <button type="button" class="link-btn" onclick="window.app.switchBroadcastSubTab('audiences')">+ Manage Audiences</button>
+                                    </div>
+                                </div>
+
+                                <!-- Subject Row -->
+                                <div class="gmail-field-row subject-row">
+                                    <input type="text" id="bcast-subject-input" class="gmail-subject-input" placeholder="Subject" required autocomplete="off">
+                                    <button type="button" class="gmail-field-toggle-btn" id="btn-toggle-preheader" onclick="window.app.togglePreheader()" title="Add preheader snippet">Snippet</button>
+                                </div>
+
+                                <!-- Preheader Snippet Row (collapsible) -->
+                                <div class="gmail-field-row preheader-row" id="bcast-preheader-row" style="display: none;">
+                                    <span class="gmail-field-label">Snippet</span>
+                                    <div class="gmail-input-wrapper">
+                                        <input type="text" id="bcast-preview-text-input" class="gmail-field-input" placeholder="Inbox preheader text (displayed next to subject in email clients)">
+                                    </div>
+                                </div>
+
+                                <!-- Dynamic Variables & Merge Tags Ribbon -->
+                                <div class="gmail-merge-ribbon">
+                                    <span class="ribbon-title">Dynamic Variables:</span>
+                                    <button type="button" class="tag-chip" onclick="window.app.insertMergeTag('{{{contact.first_name|there}}}')">+ First Name</button>
+                                    <button type="button" class="tag-chip" onclick="window.app.insertMergeTag('{{{contact.last_name}}}')">+ Last Name</button>
+                                    <button type="button" class="tag-chip" onclick="window.app.insertMergeTag('{{{contact.email}}}')">+ Email</button>
+                                    <button type="button" class="tag-chip unsubscribe" onclick="window.app.insertMergeTag('{{{RESEND_UNSUBSCRIBE_URL}}}')">+ Unsubscribe Link (Mandatory)</button>
+                                    <button type="button" class="tag-chip cta-btn-chip" onclick="window.app.openButtonModal()">+ Callout Button</button>
+                                </div>
+                            </div>
+
+                            <!-- Gmail Canvas Body with Drag & Drop & Paste Support -->
+                            <div class="gmail-body-container" id="bcast-body-container">
+                                <div id="bcast-editor-canvas" class="gmail-canvas" contenteditable="true" spellcheck="false" data-placeholder="Compose your broadcast campaign... (Or paste / drag-and-drop images directly from your computer)">
+                                    <p>Hello {{{contact.first_name|there}}},</p>
+                                    <p>We are reaching out with an official update regarding your Cortex workspace and connected infrastructure.</p>
+                                    <p>If you have any inquiries, our support team is available at <a href="mailto:support@cortexco.in">support@cortexco.in</a>.</p>
+                                    <br>
+                                    <hr style="border: none; border-top: 1px solid #334155; margin: 24px 0;">
+                                    <p style="font-size: 11.5px; color: #64748b; line-height: 1.5;">
+                                        You are receiving this broadcast because you are a registered customer of Cortex Technologies.<br>
+                                        To stop receiving updates, you can <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #3b82f6;">unsubscribe here</a>.
+                                    </p>
+                                </div>
+
+                                <!-- Raw HTML Textarea (toggled via HTML mode) -->
+                                <textarea id="bcast-editor-raw" class="gmail-raw-textarea" style="display: none;" spellcheck="false"></textarea>
+
+                                <!-- Drag & Drop overlay cue -->
+                                <div class="gmail-drop-overlay" id="bcast-drop-overlay">
+                                    <div class="drop-cue">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                        <span>Drop image to insert inline</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Gmail Formatting Bar for Broadcast -->
+                            <div class="gmail-format-bar" id="bcast-format-bar">
+                                <!-- Undo / Redo -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('undo')" title="Undo (Ctrl+Z)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('redo')" title="Redo (Ctrl+Y)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                </button>
+                                <div class="gf-sep"></div>
+
+                                <!-- Heading formats -->
+                                <select class="gf-select" onchange="document.execCommand('formatBlock', false, this.value)" title="Heading Format">
+                                    <option value="<p>">Normal text</option>
+                                    <option value="<h1>">Heading 1</option>
+                                    <option value="<h2>">Heading 2</option>
+                                    <option value="<h3>">Heading 3</option>
+                                </select>
+
+                                <!-- Font Family -->
+                                <select class="gf-select" onchange="window.app.applyFontFamily(this.value, 'broadcast')" title="Font Family">
+                                    <option value="sans-serif">Sans Serif</option>
+                                    <option value="serif">Serif</option>
+                                    <option value="monospace">Fixed Width</option>
+                                    <option value="Arial">Arial</option>
+                                    <option value="Georgia">Georgia</option>
+                                </select>
+
+                                <!-- Font Size -->
+                                <select class="gf-select" onchange="window.app.applyFontSize(this.value, 'broadcast')" title="Font Size">
+                                    <option value="2">Small</option>
+                                    <option value="3" selected>Normal</option>
+                                    <option value="4">Large</option>
+                                    <option value="5">Huge</option>
+                                </select>
+                                <div class="gf-sep"></div>
+
+                                <!-- B, I, U, S -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('underline')" title="Underline (Ctrl+U)"><u>U</u></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('strikeThrough')" title="Strikethrough"><s>S</s></button>
+                                <div class="gf-sep"></div>
+
+                                <!-- Text & Highlight Color -->
+                                <button type="button" class="gf-btn" onclick="window.app.toggleColorPalette('broadcast', this)" title="Text Color &amp; Highlight">
+                                    <span style="font-weight: 700; border-bottom: 2px solid #2563eb; line-height: 1.1;">A</span>
+                                </button>
+
+                                <!-- Alignment -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyLeft')" title="Align Left">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyCenter')" title="Align Center">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="10" x2="6" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="18" y1="18" x2="6" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyRight')" title="Align Right">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="21" y1="10" x2="7" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="7" y2="18"></line></svg>
+                                </button>
+                                <div class="gf-sep"></div>
+
+                                <!-- Lists & Quote -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('insertOrderedList')" title="Numbered List">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="10" y1="6" x2="21" y2="6"></line><line x1="10" y1="12" x2="21" y2="12"></line><line x1="10" y1="18" x2="21" y2="18"></line><path d="M4 6h1v4"></path><path d="M4 10h2"></path><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('insertUnorderedList')" title="Bulleted List">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('formatBlock', false, '<blockquote>')" title="Quote">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('removeFormat')" title="Clear Formatting">
+                                    <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">T̶</span>
+                                </button>
+                            </div>
+
+                            <!-- Gmail Bottom Action Bar -->
+                            <div class="gmail-bottom-bar">
+                                <div class="gb-left">
+                                    <!-- Send Broadcast Now Button -->
+                                    <button type="button" class="gmail-send-btn" id="btn-send-broadcast-now" onclick="window.app.submitBroadcast(true)" title="Dispatch Broadcast Campaign via Resend">
+                                        <span class="send-text">Send Broadcast</span>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                    </button>
+
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-save-broadcast-draft" onclick="window.app.submitBroadcast(false)" style="margin-left: 8px;">
+                                        Save Draft
+                                    </button>
+
+                                    <!-- Formatting Toggle -->
+                                    <button type="button" class="gb-icon-btn active" id="btn-toggle-bcast-format" onclick="window.app.toggleFormatBar('broadcast')" title="Formatting Options">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20h16"></path><path d="M12 4L6 18"></path><path d="M12 4l6 14"></path><path d="M8 14h8"></path></svg>
+                                    </button>
+
+                                    <!-- Insert Link -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openLinkModal('broadcast')" title="Insert Link (Ctrl+K)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                    </button>
+
+                                    <!-- Insert Photo / Image (Computer Upload + URL) -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openPhotoModal('broadcast')" title="Insert Photo (From Computer or Web)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                    </button>
+
+                                    <!-- Insert CTA Button -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openButtonModal()" title="Insert Callout Button">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="6" width="18" height="12" rx="4"></rect><path d="M10 12h4"></path></svg>
+                                    </button>
+
+                                    <!-- Live Preview -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openLivePreview('broadcast')" title="Interactive Live Preview (Desktop &amp; Mobile)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    </button>
+                                </div>
+
+                                <div class="gb-right">
+                                    <button type="button" class="gb-icon-btn discard-btn" onclick="window.app.resetBroadcastComposer()" title="Reset Composer">
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SUB-VIEW 3: BROADCAST HISTORY -->
+                    <div id="bcast-view-history" class="bcast-subview" style="display: none;">
+                        <div class="workspace-ribbon" style="border-top: none; background: transparent; padding: 10px 0 12px;">
+                            <div class="ribbon-left">
+                                <span style="font-size: 12px; font-weight: 600; color: var(--text-white);">Broadcast Campaigns Stream</span>
+                            </div>
+                            <div class="ribbon-right">
+                                <button class="btn btn-secondary btn-sm" onclick="window.app.loadBroadcasts()">Refresh History</button>
+                            </div>
+                        </div>
+
+                        <div class="table-viewport">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Campaign Name / Subject</th>
+                                        <th>Audience</th>
+                                        <th>Status</th>
+                                        <th>Sent / Scheduled</th>
+                                        <th>Created Date</th>
+                                        <th class="align-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="broadcasts-history-tbody">
+                                    <tr>
+                                        <td colspan="6">
+                                            <div class="table-empty">
+                                                <div class="table-empty-text">Loading broadcasts from Resend...</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═════════════════════════════════════════════════════════════
+                     TAB 7: 1-TO-1 SUPPORT MAIL & LIVE DELIVERY TRACKER
+                     ═════════════════════════════════════════════════════════════ -->
+                <section class="tab-pane" id="pane-support-mail">
+                    <!-- Workspace Ribbon -->
+                    <div class="workspace-ribbon">
+                        <div class="ribbon-left">
+                            <button class="filter-pill active" id="supp-tabbtn-compose" onclick="window.app.switchSupportSubTab('compose')">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                <span>Compose 1-to-1 Support Mail</span>
+                            </button>
+                            <button class="filter-pill" id="supp-tabbtn-tracker" onclick="window.app.switchSupportSubTab('tracker')">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+                                <span>Real-time Delivery Tracker</span>
+                            </button>
+                        </div>
+                        <div class="ribbon-right">
+                            <div class="quick-id-lookup">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                <input type="text" id="supp-quick-id-input" placeholder="Query Resend Email ID...">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.queryEmailStatusById()">Track</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SUB-VIEW 1: COMPOSE 1-TO-1 SUPPORT EMAIL (Gmail Style) -->
+                    <div id="supp-view-compose" class="supp-subview">
+                        <div class="gmail-compose-window" id="supp-compose-window">
+                            <!-- Gmail Window Header -->
+                            <div class="gmail-compose-header">
+                                <div class="gmail-header-left">
+                                    <span class="gmail-header-title">New Message</span>
+                                    <span class="gmail-sender-badge" title="Dispatched directly via Resend Cloud API">
+                                        <span class="indicator-dot"></span>
+                                        <span>support@cortexco.in</span>
+                                    </span>
+                                </div>
+                                <div class="gmail-header-right">
+                                    <button type="button" class="gmail-window-btn" title="Toggle Expanded Canvas" onclick="window.app.toggleComposerExpand('support')">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                                    </button>
+                                    <button type="button" class="gmail-window-btn" title="Reset Composer" onclick="window.app.clearSupportComposer()">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Gmail Envelope Fields -->
+                            <div class="gmail-envelope-container">
+                                <!-- From Row -->
+                                <div class="gmail-field-row from-row">
+                                    <span class="gmail-field-label">From</span>
+                                    <div class="gmail-sender-display">
+                                        <strong>Cortex Support</strong> &lt;support@cortexco.in&gt;
+                                        <span class="gmail-forward-notice" title="Inbound customer replies route to your external mailbox via ImprovMX">↳ Inbound via ImprovMX</span>
+                                    </div>
+                                </div>
+
+                                <!-- To Field -->
+                                <div class="gmail-field-row to-row">
+                                    <span class="gmail-field-label">To</span>
+                                    <div class="gmail-input-wrapper">
+                                        <input type="email" id="supp-to-input" class="gmail-field-input" placeholder="Recipients" required autocomplete="off">
+                                    </div>
+                                    <div class="gmail-field-actions">
+                                        <button type="button" class="gmail-field-toggle-btn" id="btn-toggle-cc" onclick="window.app.toggleCc()">Cc</button>
+                                        <button type="button" class="gmail-field-toggle-btn" id="btn-toggle-bcc" onclick="window.app.toggleBcc()">Bcc</button>
+                                    </div>
+                                </div>
+
+                                <!-- CC Field (collapsible) -->
+                                <div class="gmail-field-row cc-row" id="supp-cc-row" style="display: none;">
+                                    <span class="gmail-field-label">Cc</span>
+                                    <div class="gmail-input-wrapper">
+                                        <input type="text" id="supp-cc-input" class="gmail-field-input" placeholder="Carbon copy email addresses (comma separated)">
+                                    </div>
+                                </div>
+
+                                <!-- BCC Field (collapsible) -->
+                                <div class="gmail-field-row bcc-row" id="supp-bcc-row" style="display: none;">
+                                    <span class="gmail-field-label">Bcc</span>
+                                    <div class="gmail-input-wrapper">
+                                        <input type="text" id="supp-bcc-input" class="gmail-field-input" placeholder="Blind carbon copy email addresses (comma separated)">
+                                    </div>
+                                </div>
+
+                                <!-- Subject Field -->
+                                <div class="gmail-field-row subject-row">
+                                    <input type="text" id="supp-subject-input" class="gmail-subject-input" placeholder="Subject" required autocomplete="off">
+                                </div>
+                            </div>
+
+                            <!-- Canvas Body with Drag & Drop & Paste Support -->
+                            <div class="gmail-body-container" id="supp-body-container">
+                                <div id="supp-editor-canvas" class="gmail-canvas" contenteditable="true" spellcheck="false" data-placeholder="Write your support message here... (Drag &amp; drop images or paste from clipboard)">
+                                    <p>Hello,</p>
+                                    <p>Thank you for contacting Cortex Support. We have received your query and are reviewing the details.</p>
+                                    <br>
+                                    <p>Best regards,<br>
+                                    <strong>Cortex Technical Support Team</strong><br>
+                                    <span style="color: #64748b; font-size: 12px;">https://cortexco.in</span></p>
+                                </div>
+                                <!-- Drag & Drop overlay cue -->
+                                <div class="gmail-drop-overlay" id="supp-drop-overlay">
+                                    <div class="drop-cue">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                        <span>Drop image to insert inline</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Attachment Chips Tray -->
+                            <div id="supp-attachments-tray" class="gmail-attachments-tray" style="display: none;">
+                                <div id="supp-attachments-container" class="gmail-chips-list"></div>
+                            </div>
+
+                            <!-- Gmail Formatting Bar -->
+                            <div class="gmail-format-bar" id="supp-format-bar">
+                                <!-- Undo / Redo -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('undo')" title="Undo (Ctrl+Z)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('redo')" title="Redo (Ctrl+Y)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                </button>
+                                <div class="gf-sep"></div>
+
+                                <!-- Font Family -->
+                                <select class="gf-select" onchange="window.app.applyFontFamily(this.value, 'support')" title="Font Family">
+                                    <option value="sans-serif">Sans Serif</option>
+                                    <option value="serif">Serif</option>
+                                    <option value="monospace">Fixed Width</option>
+                                    <option value="Arial">Arial</option>
+                                    <option value="Georgia">Georgia</option>
+                                    <option value="Roboto">Roboto</option>
+                                </select>
+
+                                <!-- Font Size -->
+                                <select class="gf-select" onchange="window.app.applyFontSize(this.value, 'support')" title="Font Size">
+                                    <option value="2">Small</option>
+                                    <option value="3" selected>Normal</option>
+                                    <option value="4">Large</option>
+                                    <option value="5">Huge</option>
+                                </select>
+                                <div class="gf-sep"></div>
+
+                                <!-- B, I, U, S -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('underline')" title="Underline (Ctrl+U)"><u>U</u></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('strikeThrough')" title="Strikethrough"><s>S</s></button>
+                                <div class="gf-sep"></div>
+
+                                <!-- Text & Background Color Popover Trigger -->
+                                <button type="button" class="gf-btn" onclick="window.app.toggleColorPalette('support', this)" title="Text Color &amp; Highlight">
+                                    <span style="font-weight: 700; border-bottom: 2px solid #2563eb; line-height: 1.1;">A</span>
+                                </button>
+
+                                <!-- Alignments -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyLeft')" title="Align Left">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyCenter')" title="Align Center">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="10" x2="6" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="18" y1="18" x2="6" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyRight')" title="Align Right">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="21" y1="10" x2="7" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="7" y2="18"></line></svg>
+                                </button>
+                                <div class="gf-sep"></div>
+
+                                <!-- Lists, Quote, Indent -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('insertOrderedList')" title="Numbered List">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="10" y1="6" x2="21" y2="6"></line><line x1="10" y1="12" x2="21" y2="12"></line><line x1="10" y1="18" x2="21" y2="18"></line><path d="M4 6h1v4"></path><path d="M4 10h2"></path><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('insertUnorderedList')" title="Bulleted List">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('outdent')" title="Indent Less">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="7 8 3 12 7 16"></polyline><line x1="21" y1="12" x2="3" y2="12"></line><line x1="21" y1="6" x2="11" y2="6"></line><line x1="21" y1="18" x2="11" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('indent')" title="Indent More">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="17 8 21 12 17 16"></polyline><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="13" y2="6"></line><line x1="3" y1="18" x2="13" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('formatBlock', false, '<blockquote>')" title="Quote">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path></svg>
+                                </button>
+                                <div class="gf-sep"></div>
+
+                                <!-- Remove Formatting -->
+                                <button type="button" class="gf-btn" onclick="document.execCommand('removeFormat')" title="Clear Formatting">
+                                    <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">T̶</span>
+                                </button>
+                            </div>
+
+                            <!-- Gmail Bottom Action Bar -->
+                            <div class="gmail-bottom-bar">
+                                <div class="gb-left">
+                                    <!-- Send Button -->
+                                    <button type="button" class="gmail-send-btn" id="btn-send-support-email" onclick="window.app.sendSupportEmail()" title="Send (Ctrl+Enter)">
+                                        <span class="send-text">Send</span>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                    </button>
+
+                                    <!-- Formatting Toggle Button (Icon A with line) -->
+                                    <button type="button" class="gb-icon-btn active" id="btn-toggle-supp-format" onclick="window.app.toggleFormatBar('support')" title="Formatting Options">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20h16"></path><path d="M12 4L6 18"></path><path d="M12 4l6 14"></path><path d="M8 14h8"></path></svg>
+                                    </button>
+
+                                    <!-- Attach Files (Paperclip) -->
+                                    <input type="file" id="supp-file-input" multiple style="display: none;" onchange="window.app.handleFileSelect(event)">
+                                    <button type="button" class="gb-icon-btn" onclick="document.getElementById('supp-file-input').click()" title="Attach Files (PDF, Logs, Archives)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                                    </button>
+
+                                    <!-- Insert Link (Chain) -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openLinkModal('support')" title="Insert Link (Ctrl+K)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                    </button>
+
+                                    <!-- Insert Emoji (Smile) -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.toggleEmojiPicker('support', this)" title="Insert Emoji">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                                    </button>
+
+                                    <!-- Insert Photo / Image (Photo icon - System Upload + URL) -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openPhotoModal('support')" title="Insert Photo (From Computer or Web)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                    </button>
+
+                                    <!-- Live Preview (Eye icon) -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openLivePreview('support')" title="Live Interactive Preview (Desktop &amp; Mobile)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    </button>
+                                </div>
+
+                                <div class="gb-right">
+                                    <span class="gmail-draft-status font-mono" id="supp-draft-status">Ready</span>
+                                    <button type="button" class="gb-icon-btn discard-btn" onclick="window.app.clearSupportComposer()" title="Discard Draft">
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SUB-VIEW 2: DELIVERY STATUS TRACKER & SENT HISTORY -->
+                    <div id="supp-view-tracker" class="supp-subview" style="display: none;">
+                        <div class="workspace-ribbon" style="border-top: none; background: transparent; padding: 10px 0 12px;">
+                            <div class="ribbon-left">
+                                <button class="filter-pill active" data-tracker-filter="all" onclick="window.app.filterTracker('all', this)">
+                                    <span>All Sent</span>
+                                    <span class="count" id="count-tracker-all">0</span>
+                                </button>
+                                <button class="filter-pill" data-tracker-filter="delivered" onclick="window.app.filterTracker('delivered', this)">
+                                    <span>Delivered</span>
+                                    <span class="count" id="count-tracker-delivered">0</span>
+                                </button>
+                                <button class="filter-pill" data-tracker-filter="opened" onclick="window.app.filterTracker('opened', this)">
+                                    <span>Opened</span>
+                                    <span class="count" id="count-tracker-opened">0</span>
+                                </button>
+                                <button class="filter-pill" data-tracker-filter="bounced" onclick="window.app.filterTracker('bounced', this)">
+                                    <span>Bounced</span>
+                                    <span class="count" id="count-tracker-bounced">0</span>
+                                </button>
+                            </div>
+                            <div class="ribbon-right">
+                                <div class="search-field">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    <input type="text" id="tracker-search-input" placeholder="Search recipient or subject..." oninput="window.app.renderTrackerTable()">
+                                </div>
+                                <button class="btn btn-secondary btn-sm" onclick="window.app.loadSentHistory()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                    <span>Refresh Tracker</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Real-time Sent Log Table -->
+                        <div class="table-viewport">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Recipient (To)</th>
+                                        <th>Subject</th>
+                                        <th>Sent Timestamp</th>
+                                        <th>Delivery Status</th>
+                                        <th>Resend Email ID</th>
+                                        <th class="align-right">Diagnostics</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tracker-table-body">
+                                    <tr>
+                                        <td colspan="6">
+                                            <div class="table-empty">
+                                                <div class="table-empty-text">Loading real-time delivery telemetry from Resend...</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
             </div>
         </main>
     </div>
@@ -707,8 +1422,433 @@
         </div>
     </div>
 
+    <!-- Modal 7: Create Resend Audience -->
+    <div class="modal-overlay" id="modal-new-audience">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div class="modal-title">Create Resend Audience / Segment</div>
+                <button class="btn-icon" onclick="window.app.closeModals()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <form id="form-new-audience">
+                <div class="modal-body form-stack">
+                    <div class="form-group">
+                        <label for="new-audience-name">Audience Name <span style="color: var(--ruby);">*</span></label>
+                        <input type="text" id="new-audience-name" required class="form-input" placeholder="e.g. Enterprise Tier Clients, Product Beta Users">
+                    </div>
+                    <div style="font-size: 11.5px; color: var(--text-muted); line-height: 1.5;">
+                        This audience will be created directly inside your connected Resend account. Zero database records will be saved to your personal cluster.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btn-submit-new-audience">Create in Resend</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 8: Add Single Contact -->
+    <div class="modal-overlay" id="modal-add-contact">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div class="modal-title">Add Subscriber to Audience</div>
+                <button class="btn-icon" onclick="window.app.closeModals()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <form id="form-add-contact">
+                <div class="modal-body form-stack">
+                    <div class="form-group">
+                        <label for="contact-email">Email Address <span style="color: var(--ruby);">*</span></label>
+                        <input type="email" id="contact-email" required class="form-input" placeholder="subscriber@domain.com">
+                    </div>
+                    <div class="form-grid-row">
+                        <div class="form-group">
+                            <label for="contact-firstname">First Name</label>
+                            <input type="text" id="contact-firstname" class="form-input" placeholder="Alex">
+                        </div>
+                        <div class="form-group">
+                            <label for="contact-lastname">Last Name</label>
+                            <input type="text" id="contact-lastname" class="form-input" placeholder="Vance">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; text-transform: none; font-size: 12.5px;">
+                            <input type="checkbox" id="contact-unsubscribed">
+                            <span>Mark as opted-out / unsubscribed</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btn-submit-contact">Add Subscriber</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 9: CSV Batch Contacts Importer -->
+    <div class="modal-overlay" id="modal-import-csv">
+        <div class="modal-box" style="max-width: 620px;">
+            <div class="modal-header">
+                <div class="modal-title">Batch Import Contacts via CSV</div>
+                <button class="btn-icon" onclick="window.app.closeModals()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body form-stack">
+                <div class="csv-drop-zone" id="csv-drop-zone" onclick="document.getElementById('csv-file-input').click()">
+                    <input type="file" id="csv-file-input" accept=".csv,text/csv" style="display: none;" onchange="window.app.handleCsvSelected(event)">
+                    <div class="drop-zone-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                    </div>
+                    <div class="drop-zone-title">Click to browse or drop your CSV file here</div>
+                    <div class="drop-zone-sub">Expected headers: <code>email</code>, <code>first_name</code>, <code>last_name</code></div>
+                </div>
+
+                <!-- CSV Sample Generator -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                    <span style="font-size: 11px; color: var(--text-muted);">Need a template?</span>
+                    <button type="button" class="link-btn" onclick="window.app.downloadSampleCsv()">Download Sample CSV</button>
+                </div>
+
+                <!-- Parsed Preview Table -->
+                <div id="csv-preview-section" style="display: none; margin-top: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 12px; font-weight: 600; color: var(--text-white);">CSV Preview</span>
+                        <span id="csv-summary-badge" class="badge-metric" style="color: var(--emerald);">0 contacts detected</span>
+                    </div>
+                    <div class="table-viewport" style="max-height: 180px; overflow-y: auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Email</th>
+                                    <th>First Name</th>
+                                    <th>Last Name</th>
+                                </tr>
+                            </thead>
+                            <tbody id="csv-preview-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Import Progress -->
+                <div id="csv-progress-section" style="display: none; margin-top: 10px;">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="csv-progress-fill" style="width: 0%;"></div>
+                    </div>
+                    <div id="csv-progress-status" style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px; text-align: center;">Uploading...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="btn-execute-csv-import" disabled onclick="window.app.executeCsvImport()">
+                    <span>Import into Audience</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 10: Interactive Live Email Preview (Responsive Device Frame) -->
+    <div class="modal-overlay" id="modal-email-preview">
+        <div class="modal-box preview-modal-box">
+            <div class="modal-header">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    <span>Email Live Preview</span>
+                </div>
+                <!-- Device Viewport Toggle -->
+                <div class="device-switcher">
+                    <button type="button" class="device-btn active" id="btn-preview-desktop" onclick="window.app.setPreviewDevice('desktop')">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                        <span>Desktop (640px)</span>
+                    </button>
+                    <button type="button" class="device-btn" id="btn-preview-mobile" onclick="window.app.setPreviewDevice('mobile')">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                        <span>Mobile (375px)</span>
+                    </button>
+                </div>
+                <button class="btn-icon" onclick="window.app.closeModals()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body preview-modal-body">
+                <!-- Email Envelope Meta Header -->
+                <div class="preview-envelope-header">
+                    <div class="envelope-row">
+                        <span class="envelope-label">From:</span>
+                        <span class="envelope-value" id="preview-from-header">---</span>
+                    </div>
+                    <div class="envelope-row">
+                        <span class="envelope-label">To:</span>
+                        <span class="envelope-value" id="preview-to-header">---</span>
+                    </div>
+                    <div class="envelope-row">
+                        <span class="envelope-label">Subject:</span>
+                        <span class="envelope-value subject-line" id="preview-subject-header">---</span>
+                    </div>
+                    <div class="envelope-row" id="preview-preheader-row" style="display: none;">
+                        <span class="envelope-label">Snippet:</span>
+                        <span class="envelope-value" id="preview-preheader-header" style="color: var(--text-muted); font-style: italic;">---</span>
+                    </div>
+                </div>
+
+                <!-- Canvas Wrapper -->
+                <div class="preview-canvas-wrapper" id="preview-canvas-wrapper">
+                    <iframe id="preview-render-frame" class="preview-iframe" title="Email Render Canvas" sandbox="allow-same-origin"></iframe>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Close Preview</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 11: Real-time Delivery Status & Diagnostics Inspector -->
+    <div class="modal-overlay" id="modal-email-status-inspect">
+        <div class="modal-box" style="max-width: 580px;">
+            <div class="modal-header">
+                <div class="modal-title">Live Delivery Status &amp; Telemetry</div>
+                <button class="btn-icon" onclick="window.app.closeModals()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body form-stack">
+                <div class="telemetry-stat-banner">
+                    <div class="stat-banner-left">
+                        <span class="stat-banner-title">Resend Delivery Status</span>
+                        <div id="inspect-status-pill" class="status-pill active" style="margin-top: 4px; display: inline-flex;">Delivered</div>
+                    </div>
+                    <div class="stat-banner-right">
+                        <span class="stat-banner-title">Dispatched At</span>
+                        <span id="inspect-timestamp" style="font-size: 11.5px; font-family: var(--font-mono); color: var(--text-secondary); margin-top: 4px; display: block;">---</span>
+                    </div>
+                </div>
+
+                <div class="cluster-health-list" style="margin-top: 10px;">
+                    <div class="health-item">
+                        <div class="health-item-left">
+                            <span class="health-name">Resend Email ID</span>
+                            <span class="health-desc font-mono" id="inspect-email-id">---</span>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.copyKey(document.getElementById('inspect-email-id').textContent, this)">Copy</button>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-left">
+                            <span class="health-name">Recipient (To)</span>
+                            <span class="health-desc" id="inspect-recipient">---</span>
+                        </div>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-left">
+                            <span class="health-name">Sender (From)</span>
+                            <span class="health-desc" id="inspect-sender">---</span>
+                        </div>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-left">
+                            <span class="health-name">Subject</span>
+                            <span class="health-desc" id="inspect-subject">---</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 8px;">
+                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 4px;">Direct Resend Response Payload</div>
+                    <pre class="json-terminal" id="inspect-json-raw" style="max-height: 180px;">// Direct Resend API Payload</pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Close</button>
+            </div>
+        </div>
+    </div>
+    <!-- Modal 12: Gmail Style Insert Photo (System Upload + Web URL) -->
+    <div class="modal-overlay" id="modal-insert-photo">
+        <div class="modal-box photo-modal-box" style="max-width: 560px;">
+            <div class="modal-header">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    <span>Insert Photo</span>
+                </div>
+                <button class="btn-icon" onclick="window.app.closeModals()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <!-- Tabs: Upload vs Web URL -->
+            <div class="photo-modal-tabs">
+                <button type="button" class="photo-tab-btn active" id="photo-tabbtn-upload" onclick="window.app.switchPhotoTab('upload')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span>Upload from Computer</span>
+                </button>
+                <button type="button" class="photo-tab-btn" id="photo-tabbtn-url" onclick="window.app.switchPhotoTab('url')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                    <span>Web Address (URL)</span>
+                </button>
+            </div>
+
+            <div class="modal-body form-stack">
+                <!-- TAB 1: LOCAL SYSTEM UPLOAD -->
+                <div id="photo-view-upload" class="photo-tab-view">
+                    <div class="photo-drop-zone" id="photo-drop-zone" onclick="document.getElementById('photo-file-picker').click()">
+                        <input type="file" id="photo-file-picker" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" style="display: none;" onchange="window.app.handlePhotoFileSelected(event)">
+                        <div class="drop-icon">
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                        </div>
+                        <div class="drop-main-text">Choose photos to upload</div>
+                        <div class="drop-sub-text">or drag and drop photo files from your desktop / folders</div>
+                        <div class="drop-file-types">Supports PNG, JPG, GIF, WebP, SVG (up to 15MB)</div>
+                    </div>
+
+                    <!-- Selected Photo Preview Card -->
+                    <div id="photo-upload-preview" class="photo-selected-card" style="display: none;">
+                        <img id="photo-preview-img" src="" alt="Selected Preview" class="photo-thumbnail">
+                        <div class="photo-meta">
+                            <span id="photo-preview-name" class="photo-filename">image.png</span>
+                            <span id="photo-preview-size" class="photo-filesize">240 KB</span>
+                        </div>
+                        <button type="button" class="btn-icon" onclick="window.app.clearPhotoSelection()" title="Remove selection">✕</button>
+                    </div>
+                </div>
+
+                <!-- TAB 2: WEB URL -->
+                <div id="photo-view-url" class="photo-tab-view" style="display: none;">
+                    <div class="form-group">
+                        <label for="photo-url-input">Image Web Address (URL)</label>
+                        <input type="url" id="photo-url-input" class="form-input" placeholder="https://example.com/assets/banner.png" oninput="window.app.handlePhotoUrlInput(this.value)">
+                        <span class="form-hint">Paste an image link from the web.</span>
+                    </div>
+                    <!-- Live Thumbnail Preview -->
+                    <div id="photo-url-preview-card" style="display: none; margin-top: 10px; text-align: center; background: #070a0f; padding: 14px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                        <img id="photo-url-img" src="" alt="URL Preview" style="max-height: 140px; max-width: 100%; border-radius: 4px; object-fit: contain;">
+                    </div>
+                </div>
+
+                <!-- Insertion Mode Options -->
+                <div class="photo-placement-opts">
+                    <span style="font-size: 11.5px; font-weight: 600; color: var(--text-secondary);">Insert as:</span>
+                    <label class="radio-label">
+                        <input type="radio" name="photo-placement" value="inline" checked>
+                        <span>Inline (Inside email body)</span>
+                    </label>
+                    <label class="radio-label" id="photo-attach-option">
+                        <input type="radio" name="photo-placement" value="attachment">
+                        <span>As attachment</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="btn-confirm-insert-photo" onclick="window.app.executeInsertPhoto()">Insert</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 13: Insert / Edit Link -->
+    <div class="modal-overlay" id="modal-insert-link">
+        <div class="modal-box" style="max-width: 460px;">
+            <div class="modal-header">
+                <div class="modal-title">Edit Link</div>
+                <button class="btn-icon" onclick="window.app.closeModals()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body form-stack">
+                <div class="form-group">
+                    <label for="link-text-input">Text to display</label>
+                    <input type="text" id="link-text-input" class="form-input" placeholder="e.g. Visit Cortex Portal">
+                </div>
+                <div class="form-group">
+                    <label for="link-url-input">Link to (URL)</label>
+                    <input type="url" id="link-url-input" class="form-input" placeholder="https://cortexco.in/portal" value="https://">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="window.app.executeInsertLink()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 14: Callout Button Builder (for Broadcasts) -->
+    <div class="modal-overlay" id="modal-insert-button">
+        <div class="modal-box" style="max-width: 500px;">
+            <div class="modal-header">
+                <div class="modal-title">Insert Call-to-Action Button</div>
+                <button class="btn-icon" onclick="window.app.closeModals()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body form-stack">
+                <div class="form-group">
+                    <label for="cta-btn-text">Button Text</label>
+                    <input type="text" id="cta-btn-text" class="form-input" value="Access Cortex Portal →" oninput="window.app.previewCtaButton()">
+                </div>
+                <div class="form-group">
+                    <label for="cta-btn-url">Target Destination URL</label>
+                    <input type="url" id="cta-btn-url" class="form-input" value="https://cortexco.in" oninput="window.app.previewCtaButton()">
+                </div>
+                <div class="form-group">
+                    <label for="cta-btn-style">Color Style</label>
+                    <select id="cta-btn-style" class="form-select" onchange="window.app.previewCtaButton()">
+                        <option value="#2563eb" selected>Cobalt Blue (Default)</option>
+                        <option value="#059669">Emerald Green</option>
+                        <option value="#7c3aed">Royal Purple</option>
+                        <option value="#0f172a">Obsidian Dark</option>
+                        <option value="#dc2626">Crimson Red</option>
+                    </select>
+                </div>
+                <div style="margin-top: 10px;">
+                    <label style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Live Button Preview</label>
+                    <div id="cta-btn-preview-container" style="background: #ffffff; padding: 20px; border-radius: 6px; text-align: center; margin-top: 4px;">
+                        <a id="cta-btn-preview-anchor" href="#" style="background: #2563eb; color: #ffffff; padding: 11px 22px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block; font-family: sans-serif; font-size: 13.5px;">Access Cortex Portal →</a>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="window.app.executeInsertButton()">Insert Button</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Color Palette Dropdown Popover -->
+    <div id="gmail-color-popover" class="gmail-color-popover" style="display: none;">
+        <div class="palette-section">
+            <span class="palette-title">Text Color</span>
+            <div class="color-grid" id="text-color-grid"></div>
+        </div>
+        <div class="palette-section" style="margin-top: 8px;">
+            <span class="palette-title">Background Highlight</span>
+            <div class="color-grid" id="bg-color-grid"></div>
+        </div>
+    </div>
+
+    <!-- Floating Emoji Picker Popover -->
+    <div id="gmail-emoji-popover" class="gmail-emoji-popover" style="display: none;">
+        <div class="emoji-tabs">
+            <span class="emoji-tab-label">Quick Reactions &amp; Emojis</span>
+        </div>
+        <div class="emoji-grid" id="emoji-grid"></div>
+    </div>
+
+    <!-- Floating Inline Image Actions Bubble -->
+    <div id="gmail-image-bubble" class="gmail-image-bubble" style="display: none;">
+        <button type="button" class="img-bubble-btn" onclick="window.app.resizeActiveImage('25%')">Small (25%)</button>
+        <button type="button" class="img-bubble-btn" onclick="window.app.resizeActiveImage('50%')">Medium (50%)</button>
+        <button type="button" class="img-bubble-btn" onclick="window.app.resizeActiveImage('100%')">Best Fit</button>
+        <button type="button" class="img-bubble-btn" onclick="window.app.resizeActiveImage('auto')">Original</button>
+        <div class="img-bubble-sep"></div>
+        <button type="button" class="img-bubble-btn remove" onclick="window.app.removeActiveImage()">Remove</button>
+    </div>
+
     <!-- Master Authentication Gate (Mandatory Session Shield) -->
-    <div class="auth-gate-overlay" id="auth-gate-overlay" style="display: flex;">
+    <div class="auth-gate-overlay" id="auth-gate-overlay">
         <div class="auth-card">
             <div class="auth-header">
                 <div class="auth-logo-badge">
@@ -718,20 +1858,20 @@
                 <div class="auth-subtitle">Cryptographic master authentication required to access fleet telemetry.</div>
             </div>
 
-            <form id="form-admin-login" class="auth-form">
+            <form id="form-admin-login" class="auth-form" action="javascript:void(0);" onsubmit="if(window.app && window.app.handleLoginSubmit){ window.app.handleLoginSubmit(event); } return false;">
                 <div id="login-error-banner" class="auth-error-banner" style="display: none;"></div>
 
                 <div class="form-group">
                     <label for="login-email">Administrator Email</label>
-                    <input type="email" id="login-email" value="admin@cortex.com" required class="form-input" placeholder="admin@cortex.com" autocomplete="username">
+                    <input type="email" id="login-email" value="admin@cortex.com" required class="form-input" placeholder="admin@cortex.com" autocomplete="username" onkeydown="if(event.key==='Enter'){ event.preventDefault(); if(window.app && window.app.handleLoginSubmit){ window.app.handleLoginSubmit(event); } return false; }">
                 </div>
 
                 <div class="form-group">
                     <label for="login-password">Master Password</label>
-                    <input type="password" id="login-password" required class="form-input font-mono" placeholder="Master Password" autocomplete="current-password" autofocus>
+                    <input type="password" id="login-password" required class="form-input font-mono" placeholder="Master Password" autocomplete="current-password" autofocus onkeydown="if(event.key==='Enter'){ event.preventDefault(); if(window.app && window.app.handleLoginSubmit){ window.app.handleLoginSubmit(event); } return false; }">
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-block" id="btn-login-submit" style="width: 100%; justify-content: center; padding: 10px; margin-top: 6px; font-weight: 600;">
+                <button type="button" class="btn btn-primary btn-block" id="btn-login-submit" onclick="if(window.app && window.app.handleLoginSubmit){ window.app.handleLoginSubmit(event); }" style="width: 100%; justify-content: center; padding: 10px; margin-top: 6px; font-weight: 600;">
                     Authenticate &amp; Unlock Console
                 </button>
             </form>
@@ -746,6 +1886,6 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Application Script with Cache Buster -->
-    <script src="/js/app.js?v=3.3.0"></script>
+    <script src="/js/app.js?v=3.7.2"></script>
 </body>
 </html>

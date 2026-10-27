@@ -47,7 +47,9 @@ export function verifyToken<T = any>(token: string): T | null {
         const [header, body, signature] = parts;
         const expectedSig = crypto.createHmac('sha256', env.JWT_SECRET).update(`${header}.${body}`).digest('base64url');
         
-        if (!crypto.timingSafeEqual(Buffer.from(signature!), Buffer.from(expectedSig))) {
+        const sigBuf = Buffer.from(signature || '', 'utf8');
+        const expBuf = Buffer.from(expectedSig, 'utf8');
+        if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
             return null;
         }
 

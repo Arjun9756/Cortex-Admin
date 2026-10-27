@@ -10,15 +10,16 @@ import licenseRoutes from './modules/license/license.route.js';
 import adminRoutes from './modules/admin/admin.route.js';
 import analyticsRoutes from './modules/analytics/analytics.route.js';
 import { oauthRouter } from './modules/oauth/oauth.route.js';
+import emailRoutes from './modules/email/email.route.js';
 
 const __filename = import.meta.filename;
 const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Standard Middlewares
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Standard Middlewares (25MB limit to comfortably support email attachments and CSV batch imports)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // CORS Middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -83,8 +84,17 @@ export async function ensureDatabaseReady() {
     return dbInitPromise;
 }
 
-// Pre-flight database readiness check for API routes
-app.use(['/api', '/clients', '/license', '/admin', '/analytics'], async (req: Request, res: Response, next: NextFunction) => {
+// Pre-flight database readiness check for database-backed API routes (Email and /login are resilient)
+app.use(['/api/clients', '/api/license', '/api/admin', '/api/analytics', '/api/oauth', '/clients', '/license', '/admin', '/analytics', '/oauth'], async (req: Request, res: Response, next: NextFunction) => {
+    if (
+        req.path === '/login' || 
+        req.path === '/api/admin/login' || 
+        req.path === '/me' || 
+        req.path === '/api/admin/me' || 
+        (req.originalUrl && (req.originalUrl.includes('/admin/login') || req.originalUrl.includes('/admin/me')))
+    ) {
+        return next();
+    }
     try {
         await ensureDatabaseReady();
         next();
@@ -103,12 +113,14 @@ app.use('/api/license', licenseRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/oauth', oauthRouter);
+app.use('/api/email', emailRoutes);
 
 app.use('/clients', clientRoutes);
 app.use('/license', licenseRoutes);
 app.use('/admin', adminRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/oauth', oauthRouter);
+app.use('/email', emailRoutes);
 
 // System Health Endpoint
 app.get(['/api/health', '/health'], (req: Request, res: Response) => {

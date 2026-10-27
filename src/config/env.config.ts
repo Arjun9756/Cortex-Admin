@@ -37,7 +37,11 @@ const env = {
     JIRA_CLIENT_SECRET: process.env.JIRA_CLIENT_SECRET || '',
     ADMIN_PUBLIC_URL: (process.env.ADMIN_PUBLIC_URL && !process.env.ADMIN_PUBLIC_URL.includes('cortex-admin-two.vercel.app'))
         ? process.env.ADMIN_PUBLIC_URL.trim()
-        : 'https://admin.cortexco.in'
+        : 'https://admin.cortexco.in',
+
+    RESEND_API_KEY: process.env.RESEND_API_KEY || '',
+    RESEND_BROADCAST_FROM: process.env.RESEND_BROADCAST_FROM || 'Cortex <no-reply@cortexco.in>',
+    RESEND_SUPPORT_FROM: process.env.RESEND_SUPPORT_FROM || 'Cortex Support <support@cortexco.in>'
 }
 
 export default Object.freeze(env)
