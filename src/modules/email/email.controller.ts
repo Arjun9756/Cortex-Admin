@@ -434,9 +434,10 @@ export class EmailController {
                 return res.status(400).json({ success: false, message: 'Invalid base64 image data' });
             }
 
-            const mime = matches[1]?.toLowerCase();
-            const extMatch = mime?.match(/\/(png|jpeg|jpg|gif|webp|svg\+xml)$/);
-            const ext = extMatch ? (extMatch[1] === 'svg+xml' ? 'svg' : extMatch[1] === 'jpeg' ? 'jpg' : extMatch[1]) : 'png';
+            const mime = (matches[1] || '').toLowerCase();
+            const extMatch = mime.match(/\/(png|jpeg|jpg|gif|webp|svg\+xml)$/);
+            const matchedExt = extMatch && extMatch[1] ? extMatch[1] : '';
+            const ext = matchedExt === 'svg+xml' ? 'svg' : matchedExt === 'jpeg' ? 'jpg' : (matchedExt || 'png');
             const rawName = typeof filename === 'string' && filename.trim() ? filename.replace(/[^a-zA-Z0-9._-]/g, '_') : `img-${Date.now()}`;
             const safeBase = rawName.replace(/\.[^.]+$/, '');
             const finalFilename = `${safeBase}-${Date.now().toString(36)}.${ext}`;
@@ -444,7 +445,8 @@ export class EmailController {
             const uploadsDir = path.join(process.cwd(), 'public', 'assets', 'uploads');
             await fs.promises.mkdir(uploadsDir, { recursive: true });
 
-            const buffer = Buffer.from(matches[2]!, 'base64');
+            const base64Data = matches[2] || '';
+            const buffer = Buffer.from(base64Data, 'base64');
             await fs.promises.writeFile(path.join(uploadsDir, finalFilename), buffer);
 
             const relativeUrl = `/assets/uploads/${finalFilename}`;
