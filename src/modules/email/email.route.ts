@@ -29,4 +29,7 @@ router.post('/support/send', requireAdmin, EmailController.sendSupportEmail);
 router.get('/support/history', requireAdmin, EmailController.getSupportSentHistory);
 router.get('/support/status/:id', requireAdmin, EmailController.getSupportEmailStatus);
 
+// Image Uploads for Email Embedding
+router.post('/upload-image', requireAdmin, EmailController.uploadImage);
+
 export default router;

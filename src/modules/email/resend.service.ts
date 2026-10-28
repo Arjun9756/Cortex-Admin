@@ -128,8 +128,8 @@ export class ResendService {
     // ─────────────────────────────────────────────────────────────────────────
     static async checkStatus(): Promise<{ configured: boolean; valid: boolean; error?: string; broadcastFrom: string; supportFrom: string }> {
         const apiKey = this.getApiKey();
-        const broadcastFrom = env.RESEND_BROADCAST_FROM || 'Cortex <no-reply@cortexco.in>';
-        const supportFrom = env.RESEND_SUPPORT_FROM || 'Cortex Support <support@cortexco.in>';
+        const broadcastFrom = env.RESEND_BROADCAST_FROM || 'CortexCo <no-reply@cortexco.in>';
+        const supportFrom = env.RESEND_SUPPORT_FROM || 'CortexCo Support <support@cortexco.in>';
 
         if (!apiKey) {
             return {
@@ -460,6 +460,12 @@ export class ResendService {
         throw new Error(res.error?.message || 'Failed to retrieve broadcast');
     }
 
+    private static qualifyHtmlAssetUrls(html?: string): string | undefined {
+        if (!html) return html;
+        const publicBase = (env.ADMIN_PUBLIC_URL || 'https://admin.cortexco.in').replace(/\/+$/, '');
+        return html.replace(/src=(["'])\/assets\//gi, `src=$1${publicBase}/assets/`);
+    }
+
     static async createBroadcast(payload: {
         name?: string | undefined;
         segmentId: string;
@@ -470,7 +476,7 @@ export class ResendService {
         previewText?: string | undefined;
         send?: boolean | undefined;
     }): Promise<{ id: string }> {
-        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'Cortex <no-reply@cortexco.in>';
+        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'CortexCo <no-reply@cortexco.in>';
 
         const body: Record<string, any> = {
             audience_id: payload.segmentId,
@@ -481,7 +487,7 @@ export class ResendService {
         };
 
         if (payload.previewText) body.preview_text = payload.previewText;
-        if (payload.html) body.html = payload.html;
+        if (payload.html) body.html = this.qualifyHtmlAssetUrls(payload.html);
         if (payload.text) body.text = payload.text;
 
         const res = await this.request<{ id: string }>('/broadcasts', {
@@ -520,7 +526,7 @@ export class ResendService {
         replyTo?: string | undefined;
         attachments?: ResendAttachment[] | undefined;
     }): Promise<{ id: string }> {
-        const fromAddress = payload.from || env.RESEND_SUPPORT_FROM || 'Cortex Support <support@cortexco.in>';
+        const fromAddress = payload.from || env.RESEND_SUPPORT_FROM || 'CortexCo Support <support@cortexco.in>';
         const toRecipients = Array.isArray(payload.to) ? payload.to : [payload.to];
 
         const body: Record<string, any> = {
@@ -529,7 +535,7 @@ export class ResendService {
             subject: payload.subject
         };
 
-        if (payload.html) body.html = payload.html;
+        if (payload.html) body.html = this.qualifyHtmlAssetUrls(payload.html);
         if (payload.text) body.text = payload.text;
 
         if (payload.cc) {

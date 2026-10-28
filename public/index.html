@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=3.6.2">
+    <link rel="stylesheet" href="/css/style.css?v=3.8.0">
 </head>
 <body>
     <div class="app-container">
@@ -478,7 +478,7 @@
                         <div class="ribbon-right">
                             <span class="sender-identity-pill" title="Verified Resend Broadcast Sender">
                                 <span class="indicator-dot"></span>
-                                <span>no-reply@cortexco.in</span>
+                                <span>CortexCo &lt;no-reply@cortexco.in&gt;</span>
                             </span>
                             <button class="btn btn-secondary btn-sm" id="btn-refresh-broadcasts" title="Reload Resend data">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
@@ -586,7 +586,7 @@
                                     <span class="gmail-header-title">New Broadcast Campaign</span>
                                     <span class="gmail-sender-badge" title="Official Resend Broadcast Channel">
                                         <span class="indicator-dot"></span>
-                                        <span>no-reply@cortexco.in</span>
+                                        <span>CortexCo &lt;no-reply@cortexco.in&gt;</span>
                                     </span>
                                 </div>
                                 <div class="gmail-header-right">
@@ -612,7 +612,7 @@
                                 <div class="gmail-field-row from-row">
                                     <span class="gmail-field-label">From</span>
                                     <div class="gmail-sender-display">
-                                        <strong>Cortex</strong> &lt;no-reply@cortexco.in&gt;
+                                        <strong>CortexCo</strong> &lt;no-reply@cortexco.in&gt;
                                         <span class="gmail-verified-tag">✓ Verified Domain</span>
                                     </div>
                                 </div>
@@ -627,6 +627,17 @@
                                     </div>
                                     <div class="gmail-field-actions">
                                         <button type="button" class="link-btn" onclick="window.app.switchBroadcastSubTab('audiences')">+ Manage Audiences</button>
+                                    </div>
+                                </div>
+
+                                <!-- Campaign Name Row -->
+                                <div class="gmail-field-row campaign-row">
+                                    <span class="gmail-field-label">Campaign</span>
+                                    <div class="gmail-input-wrapper">
+                                        <input type="text" id="bcast-campaign-name-input" class="gmail-field-input" placeholder="Campaign Name (e.g. October Platform Release, Product Update)" autocomplete="off">
+                                    </div>
+                                    <div class="gmail-field-actions">
+                                        <span class="gmail-field-badge" title="Internal identifier for Resend analytics">Internal Name</span>
                                     </div>
                                 </div>
 
@@ -659,13 +670,34 @@
                             <div class="gmail-body-container" id="bcast-body-container">
                                 <div id="bcast-editor-canvas" class="gmail-canvas" contenteditable="true" spellcheck="false" data-placeholder="Compose your broadcast campaign... (Or paste / drag-and-drop images directly from your computer)">
                                     <p>Hello {{{contact.first_name|there}}},</p>
-                                    <p>We are reaching out with an official update regarding your Cortex workspace and connected infrastructure.</p>
-                                    <p>If you have any inquiries, our support team is available at <a href="mailto:support@cortexco.in">support@cortexco.in</a>.</p>
+                                    <p>We are reaching out with an official update regarding your CortexCo workspace and connected infrastructure.</p>
                                     <br>
-                                    <hr style="border: none; border-top: 1px solid #334155; margin: 24px 0;">
-                                    <p style="font-size: 11.5px; color: #64748b; line-height: 1.5;">
-                                        You are receiving this broadcast because you are a registered customer of Cortex Technologies.<br>
-                                        To stop receiving updates, you can <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #3b82f6;">unsubscribe here</a>.
+                                    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px 0;">
+                                    <table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                                        <tr>
+                                            <td style="vertical-align: middle; padding-right: 14px;">
+                                                <img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;">
+                                            </td>
+                                            <td style="border-left: 2px solid #2563eb; width: 2px; padding: 0; height: 62px;"></td>
+                                            <td style="vertical-align: middle; padding-left: 14px;">
+                                                <div style="font-size: 18px; font-weight: 800; color: #111827; letter-spacing: -0.2px; line-height: 1.2;">
+                                                    Cortex<span style="color: #6366f1;">Co</span>
+                                                </div>
+                                                <div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">
+                                                    ENGINEERING INTELLIGENCE
+                                                </div>
+                                                <div style="margin-top: 6px; line-height: 1;">
+                                                    <a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0 12px 0;">
+                                    <p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0 0 6px 0;">
+                                        This is an automated message from CortexCo. Please do not reply to this email, as this mailbox is not monitored.
+                                    </p>
+                                    <p style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin: 0;">
+                                        To stop receiving updates, <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #2563eb; text-decoration: underline;">unsubscribe here</a>.
                                     </p>
                                 </div>
 
@@ -876,7 +908,7 @@
                                     <span class="gmail-header-title">New Message</span>
                                     <span class="gmail-sender-badge" title="Dispatched directly via Resend Cloud API">
                                         <span class="indicator-dot"></span>
-                                        <span>support@cortexco.in</span>
+                                        <span>CortexCo Support &lt;support@cortexco.in&gt;</span>
                                     </span>
                                 </div>
                                 <div class="gmail-header-right">
@@ -895,7 +927,7 @@
                                 <div class="gmail-field-row from-row">
                                     <span class="gmail-field-label">From</span>
                                     <div class="gmail-sender-display">
-                                        <strong>Cortex Support</strong> &lt;support@cortexco.in&gt;
+                                        <strong>CortexCo Support</strong> &lt;support@cortexco.in&gt;
                                         <span class="gmail-forward-notice" title="Inbound customer replies route to your external mailbox via ImprovMX">↳ Inbound via ImprovMX</span>
                                     </div>
                                 </div>
@@ -938,11 +970,37 @@
                             <div class="gmail-body-container" id="supp-body-container">
                                 <div id="supp-editor-canvas" class="gmail-canvas" contenteditable="true" spellcheck="false" data-placeholder="Write your support message here... (Drag &amp; drop images or paste from clipboard)">
                                     <p>Hello,</p>
-                                    <p>Thank you for contacting Cortex Support. We have received your query and are reviewing the details.</p>
+                                    <p>Thank you for contacting CortexCo Support. We have received your query and are reviewing the details.</p>
                                     <br>
-                                    <p>Best regards,<br>
-                                    <strong>Cortex Technical Support Team</strong><br>
-                                    <span style="color: #64748b; font-size: 12px;">https://cortexco.in</span></p>
+                                    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px 0;">
+                                    <table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                                        <tr>
+                                            <td style="vertical-align: middle; padding-right: 14px;">
+                                                <img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;">
+                                            </td>
+                                            <td style="border-left: 2px solid #2563eb; width: 2px; padding: 0; height: 72px;"></td>
+                                            <td style="vertical-align: middle; padding-left: 14px;">
+                                                <div style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1.2;">
+                                                    Support Team
+                                                </div>
+                                                <div style="font-size: 15px; font-weight: 700; color: #111827; margin-top: 2px; line-height: 1.2;">
+                                                    Cortex<span style="color: #6366f1;">Co</span>
+                                                </div>
+                                                <div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">
+                                                    ENGINEERING INTELLIGENCE
+                                                </div>
+                                                <div style="margin-top: 6px; font-size: 13px; line-height: 1;">
+                                                    <a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 500;">cortexco.in</a>
+                                                    <span style="color: #cbd5e1; margin: 0 8px;">|</span>
+                                                    <a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: none; font-weight: 500;">support@cortexco.in</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0 12px 0;">
+                                    <p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0;">
+                                        Need help? Reply to this email or write to <a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: underline;">support@cortexco.in</a> and our team will get back to you as soon as possible.
+                                    </p>
                                 </div>
                                 <!-- Drag & Drop overlay cue -->
                                 <div class="gmail-drop-overlay" id="supp-drop-overlay">
@@ -1886,6 +1944,6 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Application Script with Cache Buster -->
-    <script src="/js/app.js?v=3.7.2"></script>
+    <script src="/js/app.js?v=3.8.0"></script>
 </body>
 </html>

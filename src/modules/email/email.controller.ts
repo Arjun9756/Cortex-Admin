@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { ResendService } from './resend.service.js';
+import env from '../../config/env.config.js';
 
 function extractParamString(param: unknown): string {
     if (typeof param === 'string') return param.trim();
@@ -412,6 +415,52 @@ export class EmailController {
             res.status(500).json({
                 success: false,
                 message: err.message || 'Failed to retrieve email delivery status'
+            });
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // IMAGE UPLOAD (SAVES TO PUBLIC ASSETS FOR BULLETPROOF INBOX RENDERING)
+    // ─────────────────────────────────────────────────────────────────────────
+    static async uploadImage(req: Request, res: Response) {
+        try {
+            const { filename, dataUrl } = req.body;
+            if (!dataUrl || typeof dataUrl !== 'string') {
+                return res.status(400).json({ success: false, message: 'Image data URL is required' });
+            }
+
+            const matches = dataUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (!matches || matches.length !== 3) {
+                return res.status(400).json({ success: false, message: 'Invalid base64 image data' });
+            }
+
+            const mime = matches[1]?.toLowerCase();
+            const extMatch = mime?.match(/\/(png|jpeg|jpg|gif|webp|svg\+xml)$/);
+            const ext = extMatch ? (extMatch[1] === 'svg+xml' ? 'svg' : extMatch[1] === 'jpeg' ? 'jpg' : extMatch[1]) : 'png';
+            const rawName = typeof filename === 'string' && filename.trim() ? filename.replace(/[^a-zA-Z0-9._-]/g, '_') : `img-${Date.now()}`;
+            const safeBase = rawName.replace(/\.[^.]+$/, '');
+            const finalFilename = `${safeBase}-${Date.now().toString(36)}.${ext}`;
+
+            const uploadsDir = path.join(process.cwd(), 'public', 'assets', 'uploads');
+            await fs.promises.mkdir(uploadsDir, { recursive: true });
+
+            const buffer = Buffer.from(matches[2]!, 'base64');
+            await fs.promises.writeFile(path.join(uploadsDir, finalFilename), buffer);
+
+            const relativeUrl = `/assets/uploads/${finalFilename}`;
+            const publicBase = (env.ADMIN_PUBLIC_URL || 'https://admin.cortexco.in').replace(/\/+$/, '');
+            const publicUrl = `${publicBase}${relativeUrl}`;
+
+            res.json({
+                success: true,
+                url: relativeUrl,
+                publicUrl: publicUrl,
+                filename: finalFilename
+            });
+        } catch (err: any) {
+            res.status(500).json({
+                success: false,
+                message: err.message || 'Failed to upload image'
             });
         }
     }

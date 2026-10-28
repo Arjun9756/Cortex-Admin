@@ -1890,7 +1890,7 @@
         if (urlCard) urlCard.style.display = 'none';
     }
 
-    function executeInsertPhoto() {
+    async function executeInsertPhoto() {
         if (!state.selectedPhoto || !state.selectedPhoto.dataUrl) {
             showToast('Please select a photo file or enter a valid URL', 'error');
             return;
@@ -1911,6 +1911,24 @@
             return;
         }
 
+        let resolvedUrl = state.selectedPhoto.dataUrl;
+
+        // Auto-upload local images to server for bulletproof inbox rendering (Gmail/Apple Mail/Outlook)
+        if (resolvedUrl.startsWith('data:image/')) {
+            try {
+                showToast('Uploading image asset...', 'info');
+                const uploadRes = await apiRequest('/api/email/upload-image', 'POST', {
+                    filename: state.selectedPhoto.name || 'image.png',
+                    dataUrl: resolvedUrl
+                });
+                if (uploadRes && uploadRes.success && uploadRes.url) {
+                    resolvedUrl = uploadRes.url;
+                }
+            } catch (err) {
+                console.warn('Image upload fallback to data URI:', err);
+            }
+        }
+
         const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
@@ -1918,7 +1936,7 @@
         canvas.focus();
         restoreSelection();
 
-        const imgHtml = `<img src="${state.selectedPhoto.dataUrl}" alt="${escapeHtml(state.selectedPhoto.name)}" style="max-width: 100%; height: auto; border-radius: 6px; margin: 10px 0; display: inline-block;" />`;
+        const imgHtml = `<img src="${resolvedUrl}" alt="${escapeHtml(state.selectedPhoto.name || 'image')}" style="max-width: 100%; height: auto; border-radius: 6px; margin: 10px 0; display: inline-block;" />`;
         document.execCommand('insertHTML', false, imgHtml);
 
         attachImageBubbleListeners(canvas);
@@ -2184,9 +2202,19 @@
             files.forEach(file => {
                 if (file.type.startsWith('image/')) {
                     const reader = new FileReader();
-                    reader.onload = function(evt) {
+                    reader.onload = async function(evt) {
                         canvas.focus();
-                        const imgHtml = `<img src="${evt.target.result}" alt="${escapeHtml(file.name)}" style="max-width: 100%; height: auto; border-radius: 6px; margin: 10px 0; display: inline-block;" />`;
+                        let srcUrl = evt.target.result;
+                        try {
+                            const uploadRes = await apiRequest('/api/email/upload-image', 'POST', {
+                                filename: file.name,
+                                dataUrl: srcUrl
+                            });
+                            if (uploadRes && uploadRes.success && uploadRes.url) {
+                                srcUrl = uploadRes.url;
+                            }
+                        } catch (_) {}
+                        const imgHtml = `<img src="${srcUrl}" alt="${escapeHtml(file.name)}" style="max-width: 100%; height: auto; border-radius: 6px; margin: 10px 0; display: inline-block;" />`;
                         document.execCommand('insertHTML', false, imgHtml);
                         attachImageBubbleListeners(canvas);
                         showToast(`Inserted photo "${file.name}"`, 'success');
@@ -2227,9 +2255,19 @@
                 if (!blob) return;
 
                 const reader = new FileReader();
-                reader.onload = function(evt) {
+                reader.onload = async function(evt) {
                     canvas.focus();
-                    const imgHtml = `<img src="${evt.target.result}" alt="Pasted Image" style="max-width: 100%; height: auto; border-radius: 6px; margin: 8px 0; display: inline-block;" />`;
+                    let srcUrl = evt.target.result;
+                    try {
+                        const uploadRes = await apiRequest('/api/email/upload-image', 'POST', {
+                            filename: 'pasted-image.png',
+                            dataUrl: srcUrl
+                        });
+                        if (uploadRes && uploadRes.success && uploadRes.url) {
+                            srcUrl = uploadRes.url;
+                        }
+                    } catch (_) {}
+                    const imgHtml = `<img src="${srcUrl}" alt="Pasted Image" style="max-width: 100%; height: auto; border-radius: 6px; margin: 8px 0; display: inline-block;" />`;
                     document.execCommand('insertHTML', false, imgHtml);
                     attachImageBubbleListeners(canvas);
                     showToast('Pasted image inserted inline', 'success');
@@ -2356,15 +2394,17 @@
 
     function resetBroadcastComposer() {
         if (!confirm('Discard changes and reset the broadcast composer?')) return;
+        const camp = document.getElementById('bcast-campaign-name-input');
         const subj = document.getElementById('bcast-subject-input');
         const pre = document.getElementById('bcast-preview-text-input');
         const canvas = document.getElementById('bcast-editor-canvas');
         const raw = document.getElementById('bcast-editor-raw');
 
+        if (camp) camp.value = '';
         if (subj) subj.value = '';
         if (pre) pre.value = '';
         if (canvas) {
-            canvas.innerHTML = '<p>Hello {{{contact.first_name|there}}},</p><p><br></p><hr style="border: none; border-top: 1px solid #334155; margin: 24px 0;"><p style="font-size: 11.5px; color: #64748b; line-height: 1.5;">To stop receiving updates, <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #3b82f6;">unsubscribe here</a>.</p>';
+            canvas.innerHTML = `<p>Hello {{{contact.first_name|there}}},</p><p>We are reaching out with an official update regarding your CortexCo workspace and connected infrastructure.</p><br><hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #2563eb; width: 2px; padding: 0; height: 62px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #111827; letter-spacing: -0.2px; line-height: 1.2;">Cortex<span style="color: #6366f1;">Co</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0 12px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0 0 6px 0;">This is an automated message from CortexCo. Please do not reply to this email, as this mailbox is not monitored.</p><p style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin: 0;">To stop receiving updates, <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #2563eb; text-decoration: underline;">unsubscribe here</a>.</p>`;
         }
         if (raw) raw.value = '';
         showToast('Broadcast composer reset', 'info');
@@ -2373,6 +2413,7 @@
     async function submitBroadcast(sendNow) {
         const audienceSelect = document.getElementById('bcast-compose-audience');
         const segmentId = audienceSelect?.value;
+        const campaignName = document.getElementById('bcast-campaign-name-input')?.value.trim();
         const subject = document.getElementById('bcast-subject-input')?.value.trim();
         const previewText = document.getElementById('bcast-preview-text-input')?.value.trim();
 
@@ -2407,7 +2448,7 @@
 
         try {
             const res = await apiRequest('/api/email/broadcasts', 'POST', {
-                name: subject,
+                name: campaignName || subject,
                 segmentId,
                 subject,
                 html,
@@ -2418,6 +2459,7 @@
             if (res.success) {
                 showToast(sendNow ? 'Broadcast queued and sent via Resend!' : 'Broadcast saved as draft', 'success');
                 switchBroadcastSubTab('history');
+                loadBroadcasts();
             } else {
                 showToast(res.message || 'Failed to submit broadcast', 'error');
             }
@@ -2475,18 +2517,23 @@
             const isDraft = b.status === 'draft';
             const statusClass = isSent ? 'active' : (isDraft ? 'suspended' : 'live');
             const audienceName = (state.audiences.find(a => a.id === (b.segment_id || b.audience_id))?.name) || 'Audience';
+            const campaignTitle = b.name || b.subject || 'Broadcast';
+            const hasDiffSubject = b.subject && b.subject !== b.name;
 
             return `
                 <tr>
                     <td>
-                        <span style="font-size: 13px; font-weight: 600; color: var(--text-white);">${escapeHtml(b.name || b.subject || 'Broadcast')}</span>
-                        ${b.preview_text ? `<div style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(b.preview_text)}</div>` : ''}
+                        <div style="font-size: 13.5px; font-weight: 600; color: var(--text-white); letter-spacing: -0.01em;">
+                            ${escapeHtml(campaignTitle)}
+                        </div>
+                        ${hasDiffSubject ? `<div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Subject: ${escapeHtml(b.subject)}</div>` : ''}
+                        ${b.preview_text ? `<div style="font-size: 11px; color: var(--text-muted); font-style: italic; margin-top: 1px;">Snippet: ${escapeHtml(b.preview_text)}</div>` : ''}
                     </td>
                     <td>
-                        <span style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(audienceName)}</span>
+                        <span style="font-size: 12px; color: var(--text-secondary); background: rgba(255,255,255,0.04); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.06);">${escapeHtml(audienceName)}</span>
                     </td>
                     <td>
-                        <span class="status-pill ${statusClass}" style="font-size: 10.5px; padding: 1px 6px;">
+                        <span class="status-pill ${statusClass}" style="font-size: 10.5px; padding: 2px 7px;">
                             <span class="indicator-dot"></span>
                             <span>${escapeHtml(b.status ? b.status.toUpperCase() : 'SENT')}</span>
                         </span>
@@ -2503,7 +2550,7 @@
                                 Trigger Send
                             </button>
                         ` : `
-                            <span class="badge-metric" style="color: var(--emerald);">Dispatched</span>
+                            <span class="badge-metric" style="color: var(--emerald); font-weight: 600;">✓ Dispatched</span>
                         `}
                     </td>
                 </tr>
@@ -2616,7 +2663,7 @@
         if (cc) cc.value = '';
         if (bcc) bcc.value = '';
         if (canvas) {
-            canvas.innerHTML = '<p>Hello,</p><p><br></p><p>Best regards,<br><strong>Cortex Technical Support Team</strong><br><span style="color: #64748b; font-size: 12px;">https://cortexco.in</span></p>';
+            canvas.innerHTML = `<p>Hello,</p><p>Thank you for contacting CortexCo Support. We have received your query and are reviewing the details.</p><br><hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0 16px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #2563eb; width: 2px; padding: 0; height: 72px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 15px; font-weight: 700; color: #111827; margin-top: 2px; line-height: 1.2;">Cortex<span style="color: #6366f1;">Co</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; font-size: 13px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 500;">cortexco.in</a><span style="color: #cbd5e1; margin: 0 8px;">|</span><a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: none; font-weight: 500;">support@cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0 12px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0;">Need help? Reply to this email or write to <a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: underline;">support@cortexco.in</a> and our team will get back to you as soon as possible.</p>`;
         }
         state.supportAttachments = [];
         renderAttachedFileChips();
@@ -2887,10 +2934,12 @@
         let bodyHtml = '';
 
         if (type === 'broadcast') {
-            fromText = 'Cortex <no-reply@cortexco.in>';
+            fromText = 'CortexCo <no-reply@cortexco.in>';
             const audName = state.audiences.find(a => a.id === state.currentAudienceId)?.name || 'Target Audience';
             toText = `${audName} (All Active Subscribers)`;
-            subjText = document.getElementById('bcast-subject-input')?.value.trim() || 'Untitled Broadcast';
+            const campName = document.getElementById('bcast-campaign-name-input')?.value.trim();
+            const rawSubj = document.getElementById('bcast-subject-input')?.value.trim();
+            subjText = rawSubj || (campName ? `Campaign: ${campName}` : 'Untitled Broadcast');
             preheaderText = document.getElementById('bcast-preview-text-input')?.value.trim() || '';
 
             if (state.broadcastEditorMode === 'html') {
@@ -2907,9 +2956,9 @@
                 .replace(/\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}/g, '#unsubscribe');
 
         } else {
-            fromText = 'Cortex Support <support@cortexco.in>';
+            fromText = 'CortexCo Support <support@cortexco.in>';
             toText = document.getElementById('supp-to-input')?.value.trim() || 'client@company.com';
-            subjText = document.getElementById('supp-subject-input')?.value.trim() || 'Cortex Support Inquiry';
+            subjText = document.getElementById('supp-subject-input')?.value.trim() || 'CortexCo Support Inquiry';
             preheaderText = '';
             bodyHtml = document.getElementById('supp-editor-canvas')?.innerHTML.trim() || '<p>Empty email body</p>';
         }

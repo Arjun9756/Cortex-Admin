@@ -40,8 +40,8 @@ const env = {
         : 'https://admin.cortexco.in',
 
     RESEND_API_KEY: process.env.RESEND_API_KEY || '',
-    RESEND_BROADCAST_FROM: process.env.RESEND_BROADCAST_FROM || 'Cortex <no-reply@cortexco.in>',
-    RESEND_SUPPORT_FROM: process.env.RESEND_SUPPORT_FROM || 'Cortex Support <support@cortexco.in>'
+    RESEND_BROADCAST_FROM: process.env.RESEND_BROADCAST_FROM || 'CortexCo <no-reply@cortexco.in>',
+    RESEND_SUPPORT_FROM: process.env.RESEND_SUPPORT_FROM || 'CortexCo Support <support@cortexco.in>'
 }
 
 export default Object.freeze(env)
