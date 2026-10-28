@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=3.8.0">
+    <link rel="stylesheet" href="/css/style.css?v=3.8.1">
 </head>
 <body>
     <div class="app-container">
@@ -1807,9 +1807,9 @@
         </div>
     </div>
 
-    <!-- Modal 13: Insert / Edit Link -->
+    <!-- Modal 13: Insert / Edit Link (Gmail Style: Web URL & Email Detection) -->
     <div class="modal-overlay" id="modal-insert-link">
-        <div class="modal-box" style="max-width: 460px;">
+        <div class="modal-box" style="max-width: 480px;">
             <div class="modal-header">
                 <div class="modal-title">Edit Link</div>
                 <button class="btn-icon" onclick="window.app.closeModals()">
@@ -1819,16 +1819,31 @@
             <div class="modal-body form-stack">
                 <div class="form-group">
                     <label for="link-text-input">Text to display</label>
-                    <input type="text" id="link-text-input" class="form-input" placeholder="e.g. Visit Cortex Portal">
+                    <input type="text" id="link-text-input" class="form-input" placeholder="e.g. Visit Cortex Portal or Contact Support">
                 </div>
                 <div class="form-group">
-                    <label for="link-url-input">Link to (URL)</label>
-                    <input type="url" id="link-url-input" class="form-input" placeholder="https://cortexco.in/portal" value="https://">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label for="link-url-input" style="margin: 0;">Link destination</label>
+                        <div style="display: inline-flex; gap: 14px; font-size: 11.5px;">
+                            <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--text-secondary);">
+                                <input type="radio" name="link-target-type" id="link-type-web" value="web" checked onchange="window.app.onLinkTypeChange('web')">
+                                <span>Web address</span>
+                            </label>
+                            <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--text-secondary);">
+                                <input type="radio" name="link-target-type" id="link-type-email" value="email" onchange="window.app.onLinkTypeChange('email')">
+                                <span>Email address</span>
+                            </label>
+                        </div>
+                    </div>
+                    <input type="text" id="link-url-input" class="form-input" placeholder="https://cortexco.in" oninput="window.app.onLinkInputDetect(this.value)">
+                    <div id="link-target-hint" style="font-size: 11px; color: var(--text-muted); margin-top: 5px;">
+                        Website destination: creates a clickable blue link <code style="color: #60a5fa;">https://...</code>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="window.app.closeModals()">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="window.app.executeInsertLink()">Apply</button>
+                <button type="button" class="btn btn-primary" onclick="window.app.executeInsertLink()">Apply Link</button>
             </div>
         </div>
     </div>
@@ -1944,6 +1959,6 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Application Script with Cache Buster -->
-    <script src="/js/app.js?v=3.8.0"></script>
+    <script src="/js/app.js?v=3.8.1"></script>
 </body>
 </html>

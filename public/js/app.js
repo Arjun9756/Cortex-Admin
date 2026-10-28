@@ -1997,30 +1997,104 @@
         showToast('Image removed', 'info');
     }
 
-    // --- LINK & CALLOUT BUTTON MODALS ---
+    // --- LINK & CALLOUT BUTTON MODALS (GMAIL STYLE: WEB URL & EMAIL DETECTION) ---
 
     function openLinkModal(context = 'support') {
         state.activeComposerContext = context;
         saveSelection();
-        const selText = window.getSelection()?.toString() || '';
+        const selText = window.getSelection()?.toString().trim() || '';
         const txtInput = document.getElementById('link-text-input');
         const urlInput = document.getElementById('link-url-input');
+        const webRadio = document.getElementById('link-type-web');
+        const emailRadio = document.getElementById('link-type-email');
 
         if (txtInput) txtInput.value = selText;
-        if (urlInput) urlInput.value = 'https://';
 
+        // Auto-detect if user selected an email address vs a web URL
+        if (selText && selText.includes('@') && !selText.startsWith('http')) {
+            if (emailRadio) emailRadio.checked = true;
+            if (urlInput) {
+                urlInput.value = selText.replace(/^mailto:/i, '');
+                urlInput.placeholder = 'support@cortexco.in';
+            }
+        } else if (selText && (selText.startsWith('http') || selText.includes('.co') || selText.includes('.in') || selText.includes('.com'))) {
+            if (webRadio) webRadio.checked = true;
+            if (urlInput) {
+                urlInput.value = selText;
+                urlInput.placeholder = 'https://cortexco.in';
+            }
+        } else {
+            if (webRadio) webRadio.checked = true;
+            if (urlInput) {
+                urlInput.value = '';
+                urlInput.placeholder = 'https://cortexco.in';
+            }
+        }
+
+        updateLinkHint();
         const modal = document.getElementById('modal-insert-link');
         if (modal) modal.classList.add('open');
         setTimeout(() => urlInput?.focus(), 50);
     }
 
-    function executeInsertLink() {
-        const text = document.getElementById('link-text-input')?.value.trim() || 'Link';
-        const url = document.getElementById('link-url-input')?.value.trim();
+    function onLinkTypeChange(type) {
+        const urlInput = document.getElementById('link-url-input');
+        if (!urlInput) return;
+        if (type === 'email') {
+            urlInput.placeholder = 'support@cortexco.in';
+            if (urlInput.value.startsWith('https://') || urlInput.value.startsWith('http://')) {
+                urlInput.value = '';
+            }
+        } else {
+            urlInput.placeholder = 'https://cortexco.in';
+            if (urlInput.value.startsWith('mailto:')) {
+                urlInput.value = '';
+            }
+        }
+        updateLinkHint();
+    }
 
-        if (!url || url === 'https://') {
-            showToast('Enter a valid link URL', 'error');
+    function onLinkInputDetect(val) {
+        val = (val || '').trim();
+        const webRadio = document.getElementById('link-type-web');
+        const emailRadio = document.getElementById('link-type-email');
+        if (val.includes('@') && !val.startsWith('http://') && !val.startsWith('https://')) {
+            if (emailRadio) emailRadio.checked = true;
+        } else if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('www.')) {
+            if (webRadio) webRadio.checked = true;
+        }
+        updateLinkHint();
+    }
+
+    function updateLinkHint() {
+        const hint = document.getElementById('link-target-hint');
+        const isEmail = document.getElementById('link-type-email')?.checked;
+        const urlVal = document.getElementById('link-url-input')?.value.trim();
+        if (!hint) return;
+        if (isEmail) {
+            hint.innerHTML = `Email link: creates a clickable blue link <code style="color: #60a5fa;">mailto:${escapeHtml(urlVal || 'support@cortexco.in')}</code> (opens mail composer)`;
+        } else {
+            hint.innerHTML = `Web address: creates a clickable blue link <code style="color: #60a5fa;">${escapeHtml(urlVal || 'https://cortexco.in')}</code> (opens website)`;
+        }
+    }
+
+    function executeInsertLink() {
+        const urlInput = document.getElementById('link-url-input');
+        let url = (urlInput?.value || '').trim();
+        const isEmailType = document.getElementById('link-type-email')?.checked;
+        let text = document.getElementById('link-text-input')?.value.trim() || url || 'Link';
+
+        if (!url) {
+            showToast('Please enter a destination URL or email address', 'error');
             return;
+        }
+
+        const isEmail = isEmailType || (url.includes('@') && !url.startsWith('http://') && !url.startsWith('https://'));
+        let finalHref = url;
+        if (isEmail) {
+            finalHref = url.startsWith('mailto:') ? url : `mailto:${url.replace(/^mailto:/i, '')}`;
+        } else if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('#')) {
+            finalHref = `https://${url}`;
         }
 
         const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
@@ -2028,10 +2102,11 @@
         if (canvas) canvas.focus();
 
         restoreSelection();
-        const html = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">${escapeHtml(text)}</a>`;
+        const targetAttr = isEmail ? '' : ' target="_blank" rel="noopener noreferrer"';
+        const html = `<a href="${escapeHtml(finalHref)}"${targetAttr} style="color: #2563eb; text-decoration: underline; font-weight: 500;">${escapeHtml(text)}</a>`;
         document.execCommand('insertHTML', false, html);
         closeModals();
-        showToast('Link inserted', 'info');
+        showToast(isEmail ? 'Email link inserted (mailto:)' : 'Web link inserted', 'info');
     }
 
     function openButtonModal() {
@@ -3646,6 +3721,8 @@
         removeActiveImage,
         openLinkModal,
         executeInsertLink,
+        onLinkTypeChange,
+        onLinkInputDetect,
         openButtonModal,
         previewCtaButton,
         executeInsertButton,
