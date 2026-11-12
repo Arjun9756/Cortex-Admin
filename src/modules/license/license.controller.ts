@@ -23,14 +23,21 @@ export const LicenseController = {
 
     async create(req: Request, res: Response) {
         try {
-            const { client_id, validity_days, max_machines } = req.body;
+            const { client_id, validity_days, expiry_date, max_machines } = req.body;
             if (!client_id) {
                 return res.status(400).json({ success: false, message: 'client_id is required' });
             }
+            let resolvedDays = validity_days ? parseInt(validity_days, 10) : undefined;
+            if ((!resolvedDays || isNaN(resolvedDays)) && expiry_date) {
+                const targetTime = new Date(expiry_date).getTime();
+                if (!isNaN(targetTime)) {
+                    resolvedDays = Math.max(1, Math.ceil((targetTime - Date.now()) / (1000 * 60 * 60 * 24)));
+                }
+            }
             const license = await LicenseService.createLicense(
                 client_id,
-                validity_days ? parseInt(validity_days) : undefined,
-                max_machines ? parseInt(max_machines) : undefined
+                resolvedDays,
+                max_machines ? parseInt(max_machines, 10) : undefined
             );
             res.status(201).json({ success: true, data: license, message: 'License key issued successfully' });
         } catch (error: any) {

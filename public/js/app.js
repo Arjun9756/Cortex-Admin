@@ -20,10 +20,34 @@
         logs: [],
         filterStatus: 'all',
         searchQuery: '',
+        licenseSort: 'newest',
         devicesSearchQuery: '',
+        deviceFilter: 'all',
+        devicePlatformFilter: 'all',
+        clientFilter: 'all',
+        telemetryActionFilter: 'all',
         currentHwidLicense: null,
         sessionToken: null,
+        currentAdmin: null,
         isUnlocking: false,
+
+        // Control Plane Analytics & Security State
+        analyticsRange: '24h',
+        analytics: null,
+        distTab: 'platforms',
+        admins: [],
+        securityStatus: null,
+        systemHealth: null,
+        autoRefreshSeconds: 0,
+        autoRefreshTimer: null,
+        telemetryTailActive: false,
+        telemetryTailTimer: null,
+        confirmResolver: null,
+        rateLimitCountdownTimer: null,
+        cmdkIndex: 0,
+        cmdkItems: [],
+        lastIssuedLicense: null,
+        lastSimResponse: null,
 
         // Resend Email Integration State (Zero-DB Persistence)
         resendConfig: { configured: false, valid: false },
@@ -246,6 +270,7 @@
 
     function updateOperatorProfile(admin) {
         if (!admin) return;
+        state.currentAdmin = admin;
         const nameEl = document.getElementById('operator-name');
         const emailEl = document.getElementById('operator-email');
         const initialsEl = document.getElementById('operator-initials');
@@ -302,6 +327,57 @@
         return false;
     }
 
+    function stopRateLimitCountdown() {
+        if (state.rateLimitCountdownTimer) {
+            clearInterval(state.rateLimitCountdownTimer);
+            state.rateLimitCountdownTimer = null;
+        }
+    }
+
+    function startRateLimitCountdown(seconds) {
+        stopRateLimitCountdown();
+        const errorBanner = document.getElementById('login-error-banner');
+        const submitBtn = document.getElementById('btn-login-submit');
+        let remaining = Math.max(1, parseInt(seconds, 10) || 60);
+
+        const renderCountdown = () => {
+            if (errorBanner) {
+                errorBanner.textContent = `Rate Limit Exceeded: Max 10 login attempts per minute from your IP. Retry in ${remaining}s.`;
+                errorBanner.style.display = 'block';
+            }
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = `Locked (${remaining}s)`;
+            }
+        };
+
+        renderCountdown();
+        state.rateLimitCountdownTimer = setInterval(() => {
+            remaining -= 1;
+            if (remaining <= 0) {
+                stopRateLimitCountdown();
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Authenticate & Unlock Console';
+                }
+                if (errorBanner) {
+                    errorBanner.style.display = 'none';
+                }
+            } else {
+                renderCountdown();
+            }
+        }, 1000);
+    }
+
+    function toggleLoginPassword() {
+        const pwdInput = document.getElementById('login-password');
+        const btn = document.getElementById('btn-toggle-login-pwd');
+        if (!pwdInput) return;
+        const isPassword = pwdInput.type === 'password';
+        pwdInput.type = isPassword ? 'text' : 'password';
+        if (btn) btn.title = isPassword ? 'Hide Password' : 'Show Password';
+    }
+
     async function handleLoginSubmit(e) {
         if (e) {
             try { e.preventDefault(); } catch (_) {}
@@ -313,6 +389,10 @@
         const password = (passwordInput?.value || '').trim();
         const submitBtn = document.getElementById('btn-login-submit');
         const errorBanner = document.getElementById('login-error-banner');
+
+        if (state.rateLimitCountdownTimer) {
+            return;
+        }
 
         if (!email || !password) {
             if (errorBanner) {
@@ -330,6 +410,7 @@
 
         state.isUnlocking = true;
 
+        let rateLimited = false;
         try {
             const res = await fetch('/api/admin/login', {
                 method: 'POST',
@@ -342,6 +423,7 @@
 
             const data = await res.json().catch(() => ({}));
             if (res.ok && data.success && data.token) {
+                stopRateLimitCountdown();
                 setAuthToken(data.token);
                 updateOperatorProfile(data.admin);
                 hideAuthGate();
@@ -350,7 +432,6 @@
                 switchTab(activeTab);
                 showToast('Console unlocked. Master session active.', 'success');
 
-                // Shield against any race condition re-lockout for 4 seconds
                 setTimeout(() => {
                     state.isUnlocking = false;
                 }, 4000);
@@ -360,11 +441,21 @@
                 loadClients().catch(err => console.warn('Background loadClients failed:', err));
                 loadGlobalDevices().catch(err => console.warn('Background loadGlobalDevices failed:', err));
                 loadLogs().catch(err => console.warn('Background loadLogs failed:', err));
+                loadAnalytics().catch(err => console.warn('Background loadAnalytics failed:', err));
+                checkSystemHealth(false).catch(() => {});
                 checkResendStatus().catch(err => console.warn('Background checkResendStatus failed:', err));
+            } else if (res.status === 429) {
+                rateLimited = true;
+                state.isUnlocking = false;
+                const retryHeader = res.headers.get('Retry-After');
+                const retrySeconds = Number(data.retryAfterSeconds || retryHeader || 60);
+                startRateLimitCountdown(retrySeconds);
             } else {
                 state.isUnlocking = false;
+                const remainingHeader = res.headers.get('RateLimit-Remaining');
+                const remainingNote = remainingHeader !== null ? ` (${remainingHeader} auth attempt(s) remaining this minute)` : '';
                 if (errorBanner) {
-                    errorBanner.textContent = data.message || 'Access Denied: Invalid administrator credentials.';
+                    errorBanner.textContent = (data.message || 'Access Denied: Invalid administrator credentials.') + remainingNote;
                     errorBanner.style.display = 'block';
                 }
                 if (passwordInput) {
@@ -379,7 +470,7 @@
                 errorBanner.style.display = 'block';
             }
         } finally {
-            if (submitBtn) {
+            if (submitBtn && !rateLimited && !state.rateLimitCountdownTimer) {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Authenticate & Unlock Console';
             }
@@ -387,11 +478,24 @@
     }
 
     function handleLogout() {
+        stopRateLimitCountdown();
+        if (state.autoRefreshTimer) {
+            clearInterval(state.autoRefreshTimer);
+            state.autoRefreshTimer = null;
+        }
+        if (state.telemetryTailTimer) {
+            clearInterval(state.telemetryTailTimer);
+            state.telemetryTailTimer = null;
+            state.telemetryTailActive = false;
+        }
         setAuthToken(null);
+        state.currentAdmin = null;
         state.licenses = [];
         state.clients = [];
         state.globalDevices = [];
         state.logs = [];
+        state.analytics = null;
+        state.admins = [];
 
         // Clear UI tables so confidential data is not visible behind modal
         renderLicensesTable();
@@ -450,7 +554,7 @@
     // BULLETPROOF TAB NAVIGATION (Event-Delegated & State-Safe)
     // ─────────────────────────────────────────────────────────────────────────
     function getStoredActiveTab() {
-        const validTabs = ['dashboard', 'licenses', 'devices', 'telemetry', 'clients', 'broadcasts', 'support-mail'];
+        const validTabs = ['dashboard', 'licenses', 'devices', 'telemetry', 'clients', 'broadcasts', 'support-mail', 'admins'];
         const hash = (window.location.hash || '').replace('#', '').trim().toLowerCase();
         if (validTabs.includes(hash)) return hash;
 
@@ -462,9 +566,21 @@
         return 'dashboard';
     }
 
+    function toggleMobileSidebar(forceOpen) {
+        const sidebar = document.getElementById('app-sidebar');
+        const backdrop = document.getElementById('sidebar-backdrop');
+        if (!sidebar) return;
+        const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !sidebar.classList.contains('mobile-open');
+        sidebar.classList.toggle('mobile-open', shouldOpen);
+        if (backdrop) backdrop.classList.toggle('active', shouldOpen);
+    }
+
     function switchTab(tabId) {
-        if (!tabId || tabId === 'simulator') tabId = 'dashboard';
+        const validTabs = ['dashboard', 'licenses', 'devices', 'telemetry', 'clients', 'broadcasts', 'support-mail', 'admins'];
+        if (!tabId || !validTabs.includes(tabId)) tabId = 'dashboard';
         state.currentTab = tabId;
+
+        toggleMobileSidebar(false);
 
         // Persist to localStorage and URL hash
         try {
@@ -503,7 +619,8 @@
                 telemetry: 'Telemetry & Cryptographic Audit Stream',
                 clients: 'Client Organizations Directory',
                 broadcasts: 'Marketing & Operational Broadcast Engine',
-                'support-mail': 'Customer Support Communications & Delivery Telemetry'
+                'support-mail': 'Customer Support Communications & Delivery Telemetry',
+                admins: 'Team & Security Control'
             };
             breadcrumbEl.innerHTML = `<span>${titles[tabId] || 'Control Plane'}</span>`;
         }
@@ -511,7 +628,14 @@
         // Lazy refresh data on tab switch
         if (tabId === 'devices') loadGlobalDevices();
         if (tabId === 'telemetry') loadLogs();
-        if (tabId === 'dashboard') updateDashboardMetrics();
+        if (tabId === 'dashboard') {
+            loadAnalytics();
+            updateDashboardMetrics();
+            checkSystemHealth(false);
+        }
+        if (tabId === 'admins') {
+            loadAdminsTab();
+        }
         if (tabId === 'broadcasts') {
             checkResendStatus();
             loadAudiences();
@@ -519,50 +643,374 @@
         }
         if (tabId === 'support-mail') {
             checkResendStatus();
+            populateSupportClientPicker();
             loadSentHistory();
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // EXECUTIVE DASHBOARD LOGIC
+    // EXECUTIVE DASHBOARD & ANALYTICS ENGINE
     // ─────────────────────────────────────────────────────────────────────────
-    function updateDashboardMetrics() {
-        const totalLicenses = state.licenses.length;
-        const activeLicenses = state.licenses.filter(l => l.status === 'active').length;
-        const revokedLicenses = state.licenses.filter(l => l.status === 'revoked' || l.status === 'suspended').length;
-        const totalClients = state.clients.length;
+    async function loadAnalytics(rangeOverride) {
+        if (rangeOverride) state.analyticsRange = rangeOverride;
+        const range = state.analyticsRange || '24h';
 
-        // Calculate total bound hardware devices
-        let boundDevicesCount = 0;
-        let totalSeatLimit = 0;
-        state.licenses.forEach(l => {
-            boundDevicesCount += (l.bound_machines_count || (Array.isArray(l.hwids) ? l.hwids.length : 0));
-            totalSeatLimit += (l.max_machines || 1);
+        document.querySelectorAll('#dash-range-switcher .range-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-range') === range);
         });
+
+        const res = await apiRequest(`/api/analytics/overview?range=${encodeURIComponent(range)}`);
+        if (res && res.success && res.data) {
+            state.analytics = res.data;
+            updateDashboardMetrics();
+        }
+    }
+
+    function normalizePlatformLabel(raw) {
+        const p = String(raw || '').trim().toLowerCase();
+        if (!p || p === 'unknown' || p === 'unknown os') return 'Unknown OS';
+        if (p.includes('win')) return 'Windows (win32)';
+        if (p.includes('darwin') || p.includes('mac')) return 'macOS (darwin)';
+        if (p.includes('linux')) return 'Linux';
+        if (p.includes('manual')) return 'Manual Binding';
+        return String(raw);
+    }
+
+    function updateDashboardMetrics() {
+        const analytics = state.analytics || null;
+        const licStats = analytics?.licenses || {};
+        const pingStats = analytics?.pings || {};
+        const clientStats = analytics?.clients || {};
+        const secStats = analytics?.security || {};
+
+        const totalLicenses = licStats.total ?? state.licenses.length;
+        const activeLicenses = licStats.active ?? state.licenses.filter(l => l.status === 'active').length;
+        const suspendedLicenses = licStats.suspended ?? state.licenses.filter(l => l.status === 'suspended').length;
+        const revokedLicenses = licStats.revoked ?? state.licenses.filter(l => l.status === 'revoked').length;
+        const expiringSoonCount = licStats.expiring_soon_count ?? state.licenses.filter(isLicenseExpiringSoon).length;
+
+        const devices = state.globalDevices || [];
+        let boundDevicesCount = devices.length;
+        let blockedDevicesCount = devices.filter(isDeviceBlocked).length;
+        let onlineNowCount = devices.filter(d => !isDeviceBlocked(d) && isDeviceLive(d)).length;
+        let totalSeatLimit = 0;
+
+        state.licenses.forEach(l => {
+            if (devices.length === 0) {
+                boundDevicesCount += Number(l.bound_machines_count || (Array.isArray(l.hwids) ? l.hwids.length : 0));
+                blockedDevicesCount += Number(l.blocked_machines_count || 0);
+            }
+            totalSeatLimit += Number(l.max_machines || 1);
+        });
+
+        const totalPings = Number(pingStats.total ?? 0);
+        const successRate = pingStats.success_rate_percent !== undefined
+            ? Math.round(Number(pingStats.success_rate_percent) * 10) / 10
+            : (state.logs.length
+                ? Math.round((state.logs.filter(l => l.status === 'success').length / state.logs.length) * 100)
+                : 100);
+
+        const totalClients = clientStats.total ?? state.clients.length;
+        const activeClients = clientStats.active ?? state.clients.filter(c => c.status === 'active').length;
+
+        // Fleet Heartbeat Health: prefer backend client fleet_health_percent, plus healthy/delayed/offline breakdown
+        const hasClientHeartbeat = (clientStats.healthy_count || 0) + (clientStats.delayed_count || 0) + (clientStats.offline_count || 0) > 0;
+        const healthyCount = hasClientHeartbeat ? Number(clientStats.healthy_count || 0) : onlineNowCount;
+        const delayedCount = hasClientHeartbeat ? Number(clientStats.delayed_count || 0) : 0;
+        const offlineCount = hasClientHeartbeat
+            ? Number(clientStats.offline_count || 0)
+            : Math.max(0, boundDevicesCount - onlineNowCount);
+        const healthPct = hasClientHeartbeat
+            ? Number(clientStats.fleet_health_percent ?? 100)
+            : (boundDevicesCount > 0 ? Math.round(((boundDevicesCount - blockedDevicesCount) / boundDevicesCount) * 100) : 100);
+
+        const unauthorizedAttempts = Number(secStats.unauthorized_key_attempts || 0);
 
         const statLic = document.getElementById('dash-stat-licenses');
         const subLic = document.getElementById('dash-sub-licenses');
+        const licBar = document.getElementById('dash-lic-bar');
         const statDev = document.getElementById('dash-stat-devices');
         const subDev = document.getElementById('dash-sub-devices');
+        const statSuccess = document.getElementById('dash-stat-success-rate');
+        const subPings = document.getElementById('dash-sub-pings');
+        const statFleet = document.getElementById('dash-stat-fleet-health');
+        const subFleet = document.getElementById('dash-sub-fleet');
         const statRev = document.getElementById('dash-stat-revoked');
+        const subSec = document.getElementById('dash-sub-security');
         const statCli = document.getElementById('dash-stat-clients');
+        const subCli = document.getElementById('dash-sub-clients');
+        const lastUpdatedEl = document.getElementById('dash-last-updated');
 
         if (statLic) statLic.textContent = totalLicenses;
-        if (subLic) subLic.textContent = `${activeLicenses} active of ${totalLicenses} issued`;
-        if (statDev) statDev.textContent = boundDevicesCount;
-        if (subDev) subDev.textContent = `${boundDevicesCount} of ${totalSeatLimit} slots allocated`;
-        if (statRev) statRev.textContent = revokedLicenses;
-        if (statCli) statCli.textContent = totalClients;
+        if (subLic) subLic.textContent = `${activeLicenses} active · ${expiringSoonCount} expiring <=30d`;
+        if (licBar) {
+            const activePct = totalLicenses > 0 ? Math.round((activeLicenses / totalLicenses) * 100) : 0;
+            licBar.innerHTML = `<div class="kpi-mini-bar-fill" style="width: ${activePct}%"></div>`;
+        }
 
-        // Render Recent Logs into Dashboard
+        if (statDev) statDev.textContent = boundDevicesCount;
+        if (subDev) subDev.textContent = `${onlineNowCount} active 15m · ${totalSeatLimit} seats max`;
+
+        if (statSuccess) {
+            statSuccess.textContent = `${successRate}%`;
+            statSuccess.style.color = successRate >= 90 ? 'var(--emerald)' : successRate >= 70 ? 'var(--amber)' : 'var(--ruby)';
+        }
+        if (subPings) subPings.textContent = `${totalPings} handshakes (${state.analyticsRange})`;
+
+        if (statFleet) {
+            statFleet.textContent = `${healthPct}%`;
+            statFleet.style.color = healthPct >= 80 ? 'var(--cobalt)' : healthPct >= 50 ? 'var(--amber)' : 'var(--ruby)';
+        }
+        if (subFleet) {
+            subFleet.textContent = `${healthyCount} healthy · ${delayedCount} delayed · ${offlineCount} offline`;
+        }
+
+        if (statRev) statRev.textContent = revokedLicenses + suspendedLicenses + blockedDevicesCount;
+        if (subSec) subSec.textContent = `${revokedLicenses} revoked · ${blockedDevicesCount} blocked · ${unauthorizedAttempts} key alerts`;
+
+        if (statCli) statCli.textContent = totalClients;
+        if (subCli) subCli.textContent = `${activeClients} active corporate tenants`;
+
+        if (lastUpdatedEl) {
+            lastUpdatedEl.textContent = `Synced ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        }
+
+        renderAnalyticsTimelineSvg(analytics?.timeline || []);
+        renderAnalyticsDistribution();
+        renderExpiringWatchlist();
+        renderClientRoster();
         renderDashboardRecentLogs();
+    }
+
+    function renderAnalyticsTimelineSvg(timeline) {
+        const host = document.getElementById('dash-timeline-chart');
+        if (!host) return;
+
+        if (!Array.isArray(timeline) || timeline.length === 0) {
+            host.innerHTML = `
+                <div class="table-empty" style="padding: 46px 16px;">
+                    <div class="table-empty-text">No heartbeat telemetry in the selected ${escapeHtml(state.analyticsRange)} window</div>
+                    <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">Try switching to 7d / 30d or wait for incoming endpoint handshakes.</div>
+                </div>
+            `;
+            return;
+        }
+
+        const width = 680;
+        const height = 210;
+        const pad = { top: 18, right: 16, bottom: 28, left: 36 };
+        const plotW = width - pad.left - pad.right;
+        const plotH = height - pad.top - pad.bottom;
+
+        const maxRaw = Math.max(1, ...timeline.map(d => Number(d.total || 0)));
+        const yMax = Math.max(4, Math.ceil(maxRaw / 4) * 4);
+        const stepW = plotW / timeline.length;
+        const barW = Math.max(8, Math.min(34, stepW * 0.62));
+
+        const gridLines = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
+            const y = (pad.top + plotH - ratio * plotH).toFixed(1);
+            const label = Math.round(yMax * ratio);
+            return `
+                <line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="rgba(148,163,184,0.12)" stroke-dasharray="3 3" />
+                <text x="${pad.left - 8}" y="${Number(y) + 3}" fill="#64748b" font-size="10" text-anchor="end" font-family="monospace">${label}</text>
+            `;
+        }).join('');
+
+        const bars = timeline.map((pt, idx) => {
+            const succ = Number(pt.success ?? pt.successful ?? 0);
+            const fail = Number(pt.failed ?? 0);
+            const total = Number(pt.total ?? (succ + fail));
+            const x = pad.left + idx * stepW + (stepW - barW) / 2;
+
+            const succH = succ > 0 ? Math.max(3, (succ / yMax) * plotH) : 0;
+            const failH = fail > 0 ? Math.max(3, (fail / yMax) * plotH) : 0;
+            const succY = pad.top + plotH - succH;
+            const failY = succY - failH;
+
+            const rawLabel = String(pt.time_bucket || pt.label || '');
+            const shortLabel = rawLabel.length > 8 ? rawLabel.slice(0, 8) : rawLabel;
+            const showTick = timeline.length <= 12 || idx % Math.ceil(timeline.length / 8) === 0 || idx === timeline.length - 1;
+
+            return `
+                <g class="chart-bar-group" data-label="${escapeHtml(rawLabel)}" data-total="${total}" data-succ="${succ}" data-fail="${fail}" style="cursor: pointer;">
+                    <rect x="${(pad.left + idx * stepW).toFixed(1)}" y="${pad.top}" width="${stepW.toFixed(1)}" height="${plotH}" fill="transparent" />
+                    ${succH > 0 ? `<rect x="${x.toFixed(1)}" y="${succY.toFixed(1)}" width="${barW.toFixed(1)}" height="${succH.toFixed(1)}" rx="2" fill="#22c55e" fill-opacity="0.85" />` : ''}
+                    ${failH > 0 ? `<rect x="${x.toFixed(1)}" y="${failY.toFixed(1)}" width="${barW.toFixed(1)}" height="${failH.toFixed(1)}" rx="2" fill="#ef4444" fill-opacity="0.9" />` : ''}
+                    ${showTick ? `<text x="${(x + barW / 2).toFixed(1)}" y="${height - 8}" fill="#64748b" font-size="9.5" text-anchor="middle" font-family="monospace">${escapeHtml(shortLabel)}</text>` : ''}
+                </g>
+            `;
+        }).join('');
+
+        host.innerHTML = `
+            <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="Telemetry timeline chart">
+                ${gridLines}
+                ${bars}
+            </svg>
+            <div class="chart-legend">
+                <span><span class="chart-legend-dot" style="background:#22c55e;"></span>Authorized Handshakes</span>
+                <span><span class="chart-legend-dot" style="background:#ef4444;"></span>Denied / Security Events</span>
+            </div>
+        `;
+
+        const tooltip = document.getElementById('chart-tooltip');
+        host.querySelectorAll('.chart-bar-group').forEach(grp => {
+            grp.addEventListener('mousemove', (ev) => {
+                if (!tooltip) return;
+                const label = grp.getAttribute('data-label');
+                const total = grp.getAttribute('data-total');
+                const succ = grp.getAttribute('data-succ');
+                const fail = grp.getAttribute('data-fail');
+                tooltip.innerHTML = `
+                    <div style="font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(label)}</div>
+                    <div>Total: <strong>${total}</strong></div>
+                    <div style="color: #4ade80;">Allowed: <strong>${succ}</strong></div>
+                    <div style="color: #f87171;">Denied: <strong>${fail}</strong></div>
+                `;
+                tooltip.style.display = 'block';
+                tooltip.style.left = `${Math.min(window.innerWidth - 170, ev.clientX + 14)}px`;
+                tooltip.style.top = `${Math.max(12, ev.clientY - 56)}px`;
+            });
+            grp.addEventListener('mouseleave', () => {
+                if (tooltip) tooltip.style.display = 'none';
+            });
+        });
+    }
+
+    function renderAnalyticsDistribution() {
+        const body = document.getElementById('dash-dist-body');
+        if (!body) return;
+
+        const tab = state.distTab || 'platforms';
+        document.querySelectorAll('#dash-dist-tabs .mini-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-dist') === tab);
+        });
+
+        const analytics = state.analytics || {};
+        let rows = [];
+        let barClass = '';
+        let sourceNote = '';
+
+        if (tab === 'platforms') {
+            const rawPlatforms = analytics.platforms || analytics.distributions?.platforms || [];
+            rows = rawPlatforms.map(p => ({ label: normalizePlatformLabel(p.platform), count: Number(p.count || 0) }));
+            if (rows.length === 0 && Array.isArray(state.globalDevices) && state.globalDevices.length > 0) {
+                const counts = {};
+                state.globalDevices.forEach(d => {
+                    const key = normalizePlatformLabel(d.platform);
+                    counts[key] = (counts[key] || 0) + 1;
+                });
+                rows = Object.entries(counts)
+                    .map(([label, count]) => ({ label, count }))
+                    .sort((a, b) => b.count - a.count);
+                sourceNote = 'Enrolled device fleet breakdown (no ping telemetry in selected window)';
+            }
+        } else if (tab === 'versions') {
+            const rawVersions = analytics.versions || analytics.distributions?.versions || [];
+            rows = rawVersions.map(v => {
+                const ver = String(v.version || v.app_version || '1.0.0');
+                return { label: ver.startsWith('v') ? ver : `v${ver}`, count: Number(v.count || 0) };
+            });
+            barClass = 'success';
+        } else {
+            const rawFailures = analytics.failure_breakdown || analytics.distributions?.failure_reasons || [];
+            rows = rawFailures.map(f => ({ label: f.reason || 'Denied', count: Number(f.count || 0) }));
+            barClass = 'danger';
+        }
+
+        if (rows.length === 0) {
+            body.innerHTML = `<div class="table-empty" style="padding: 28px 12px;"><div class="table-empty-text">No ${escapeHtml(tab)} telemetry in ${escapeHtml(state.analyticsRange)} window</div></div>`;
+            return;
+        }
+
+        const total = Math.max(1, rows.reduce((sum, r) => sum + r.count, 0));
+        body.innerHTML = rows.slice(0, 6).map(r => {
+            const pct = Math.round((r.count / total) * 100);
+            return `
+                <div class="dist-item">
+                    <div class="dist-item-head">
+                        <span class="dist-item-label">${escapeHtml(r.label)}</span>
+                        <span class="dist-item-val">${r.count} (${pct}%)</span>
+                    </div>
+                    <div class="dist-bar-track">
+                        <div class="dist-bar-fill ${barClass}" style="width: ${pct}%;"></div>
+                    </div>
+                </div>
+            `;
+        }).join('') + (sourceNote ? `<div style="font-size: 10.5px; color: var(--text-muted); margin-top: 6px;">${escapeHtml(sourceNote)}</div>` : '');
+    }
+
+    function renderExpiringWatchlist() {
+        const host = document.getElementById('dash-expiring-list');
+        const badge = document.getElementById('dash-expiring-badge');
+        if (!host) return;
+
+        const apiExpiring = state.analytics?.expiring_licenses;
+        const expiring = Array.isArray(apiExpiring) ? apiExpiring : state.licenses.filter(isLicenseExpiringSoon);
+
+        if (badge) badge.textContent = `${expiring.length} expiring`;
+
+        if (expiring.length === 0) {
+            host.innerHTML = `<div class="table-empty" style="padding: 24px 12px;"><div class="table-empty-text">All active licenses have &gt;30 days remaining</div></div>`;
+            return;
+        }
+
+        host.innerHTML = expiring.slice(0, 5).map(l => {
+            const d = parseUTCDate(l.expiry_date);
+            const daysLeft = l.days_remaining !== undefined
+                ? Number(l.days_remaining)
+                : (d ? Math.max(0, Math.ceil((d.getTime() - Date.now()) / 86400000)) : '?');
+            return `
+                <div class="watchlist-row">
+                    <div class="watchlist-row-main">
+                        <span class="watchlist-row-title clickable-org" onclick="window.app.openClientDetailModal(${Number(l.client_id)})">${escapeHtml(l.org_name || 'Organization')}</span>
+                        <span class="watchlist-row-sub">${escapeHtml(l.license_key)} · ${daysLeft}d remaining</span>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.extendLicenseDays(${Number(l.id)}, 30)">+30d</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderClientRoster() {
+        const host = document.getElementById('dash-client-roster');
+        if (!host) return;
+
+        const roster = Array.isArray(state.analytics?.client_roster) && state.analytics.client_roster.length > 0
+            ? state.analytics.client_roster
+            : (state.clients || []);
+        const top = roster.slice(0, 5);
+        if (top.length === 0) {
+            host.innerHTML = `<div class="table-empty" style="padding: 24px 12px;"><div class="table-empty-text">No registered organizations yet</div></div>`;
+            return;
+        }
+
+        host.innerHTML = top.map(c => {
+            const activeCount = Number(c.active_licenses ?? 0);
+            const totalCount = Number(c.total_licenses ?? 0);
+            const st = c.health_status
+                ? (c.health_status === 'healthy' ? 'active' : c.health_status === 'delayed' ? 'suspended' : 'revoked')
+                : (c.client_status || c.status || 'active');
+            const label = c.health_label || (c.client_status || c.status || 'active');
+            return `
+                <div class="watchlist-row">
+                    <div class="watchlist-row-main">
+                        <span class="watchlist-row-title clickable-org" onclick="window.app.openClientDetailModal(${Number(c.id)})">${escapeHtml(c.org_name)}</span>
+                        <span class="watchlist-row-sub">${escapeHtml(c.email || 'No email')} · ${activeCount}/${totalCount} active keys</span>
+                    </div>
+                    <span class="status-pill ${escapeHtml(st)}" style="font-size: 10.5px;">
+                        <span class="indicator-dot"></span>
+                        <span>${escapeHtml(label)}</span>
+                    </span>
+                </div>
+            `;
+        }).join('');
     }
 
     function renderDashboardRecentLogs() {
         const tbody = document.getElementById('dash-recent-logs-tbody');
         if (!tbody) return;
 
-        const recent = state.logs.slice(0, 5);
+        const recent = state.logs.slice(0, 6);
         if (recent.length === 0) {
             tbody.innerHTML = `
                 <tr>
@@ -576,12 +1024,12 @@
             return;
         }
 
-        tbody.innerHTML = recent.map(log => {
+        tbody.innerHTML = recent.map((log, idx) => {
             const isSuccess = log.status === 'success';
             const logTimestamp = log.created_at || log.timestamp;
             const logAction = log.action_type || log.action || 'ping';
             return `
-                <tr>
+                <tr style="cursor: pointer;" onclick="window.app.openPayloadInspector(${idx})" title="Inspect telemetry payload">
                     <td>
                         <span style="font-weight: 500; color: var(--text-white);">${escapeHtml(logAction)}</span>
                     </td>
@@ -632,32 +1080,57 @@
         }
     }
 
+    function isLicenseExpiringSoon(l) {
+        if (!l || l.status !== 'active' || !l.expiry_date) return false;
+        const d = parseUTCDate(l.expiry_date);
+        if (!d) return false;
+        const days = (d.getTime() - Date.now()) / 86400000;
+        return days >= 0 && days <= 30;
+    }
+
+    function isLicenseExpired(l) {
+        if (!l || !l.expiry_date) return false;
+        const d = parseUTCDate(l.expiry_date);
+        return Boolean(d && d.getTime() < Date.now());
+    }
+
     function updateLicenseCounters() {
         const total = state.licenses.length;
         const active = state.licenses.filter(l => l.status === 'active').length;
+        const expiring = state.licenses.filter(isLicenseExpiringSoon).length;
         const suspended = state.licenses.filter(l => l.status === 'suspended').length;
         const revoked = state.licenses.filter(l => l.status === 'revoked').length;
+        const expired = state.licenses.filter(isLicenseExpired).length;
 
         const countAll = document.getElementById('count-all');
         const countActive = document.getElementById('count-active');
+        const countExpiring = document.getElementById('count-expiring');
         const countSuspended = document.getElementById('count-suspended');
         const countRevoked = document.getElementById('count-revoked');
+        const countExpired = document.getElementById('count-expired');
         const navCounter = document.getElementById('nav-counter-licenses');
 
         if (countAll) countAll.textContent = total;
         if (countActive) countActive.textContent = active;
+        if (countExpiring) countExpiring.textContent = expiring;
         if (countSuspended) countSuspended.textContent = suspended;
         if (countRevoked) countRevoked.textContent = revoked;
+        if (countExpired) countExpired.textContent = expired;
         if (navCounter) navCounter.textContent = active;
     }
 
     function renderLicensesTable() {
         const tbody = document.getElementById('licenses-table-body');
+        const footer = document.getElementById('licenses-table-footer');
         if (!tbody) return;
 
-        let filtered = state.licenses;
+        let filtered = [...state.licenses];
 
-        if (state.filterStatus !== 'all') {
+        if (state.filterStatus === 'expiring') {
+            filtered = filtered.filter(isLicenseExpiringSoon);
+        } else if (state.filterStatus === 'expired') {
+            filtered = filtered.filter(isLicenseExpired);
+        } else if (state.filterStatus !== 'all') {
             filtered = filtered.filter(l => l.status === state.filterStatus);
         }
 
@@ -670,6 +1143,25 @@
                 const hasHwid = Array.isArray(l.hwids) && l.hwids.some(h => (h.hwid || '').toLowerCase().includes(q));
                 return org.includes(q) || key.includes(q) || email.includes(q) || hasHwid;
             });
+        }
+
+        const sortMode = document.getElementById('license-sort-select')?.value || state.licenseSort || 'newest';
+        state.licenseSort = sortMode;
+        filtered.sort((a, b) => {
+            if (sortMode === 'expiry_asc') {
+                return (parseUTCDate(a.expiry_date)?.getTime() || Infinity) - (parseUTCDate(b.expiry_date)?.getTime() || Infinity);
+            }
+            if (sortMode === 'seats_desc') {
+                return Number(b.bound_machines_count || 0) - Number(a.bound_machines_count || 0);
+            }
+            if (sortMode === 'org_asc') {
+                return String(a.org_name || '').localeCompare(String(b.org_name || ''));
+            }
+            return (parseUTCDate(b.created_at)?.getTime() || Number(b.id || 0)) - (parseUTCDate(a.created_at)?.getTime() || Number(a.id || 0));
+        });
+
+        if (footer) {
+            footer.textContent = `Showing ${filtered.length} of ${state.licenses.length} licenses`;
         }
 
         if (filtered.length === 0) {
@@ -712,7 +1204,7 @@
                 <tr id="row-license-${l.id}">
                     <td>
                         <div class="cell-client">
-                            <span class="client-org-name">${escapeHtml(l.org_name || 'Individual')}</span>
+                            <span class="client-org-name clickable-org" onclick="window.app.openClientDetailModal(${Number(l.client_id)})" title="Inspect organization overview">${escapeHtml(l.org_name || 'Individual')}</span>
                             <span class="client-subtext">${escapeHtml(l.email || l.contact_name || 'No email')}</span>
                         </div>
                     </td>
@@ -753,6 +1245,7 @@
                     </td>
                     <td class="align-right">
                         <div class="row-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="window.app.extendLicenseDays(${Number(l.id)}, 30)" title="Extend expiration by 30 days">+30d</button>
                             <button class="btn btn-secondary btn-sm" onclick="window.app.openEditLicenseModal('${l.id}')" title="Edit Parameters">
                                 Edit
                             </button>
@@ -768,6 +1261,9 @@
                                     Activate
                                 </button>
                             `}
+                            <button class="btn btn-danger btn-sm" onclick="window.app.deleteLicense(${Number(l.id)})" title="Delete License Permanently">
+                                Delete
+                            </button>
                         </div>
                     </td>
                 </tr>
@@ -778,6 +1274,38 @@
     // ─────────────────────────────────────────────────────────────────────────
     // GLOBAL HARDWARE DEVICES FLEET LOGIC
     // ─────────────────────────────────────────────────────────────────────────
+    function isDeviceLive(d) {
+        if (!d || !d.last_seen_at) return false;
+        const dt = parseUTCDate(d.last_seen_at);
+        return Boolean(dt && (Date.now() - dt.getTime()) <= 15 * 60 * 1000);
+    }
+
+    function isDeviceBlocked(d) {
+        return Boolean(d && (d.is_blocked === 1 || d.is_blocked === true || d.is_blocked === '1'));
+    }
+
+    function updateDeviceCounters() {
+        const all = state.globalDevices || [];
+        const blocked = all.filter(isDeviceBlocked).length;
+        const authorized = all.length - blocked;
+        const live = all.filter(d => !isDeviceBlocked(d) && isDeviceLive(d)).length;
+        const awaiting = all.filter(d => !d.last_seen_at).length;
+
+        const counter = document.getElementById('nav-counter-devices');
+        const ribbonCounter = document.getElementById('count-global-devices');
+        const elAuth = document.getElementById('count-dev-authorized');
+        const elBlocked = document.getElementById('count-dev-blocked');
+        const elLive = document.getElementById('count-dev-live');
+        const elAwait = document.getElementById('count-dev-awaiting');
+
+        if (counter) counter.textContent = all.length;
+        if (ribbonCounter) ribbonCounter.textContent = all.length;
+        if (elAuth) elAuth.textContent = authorized;
+        if (elBlocked) elBlocked.textContent = blocked;
+        if (elLive) elLive.textContent = live;
+        if (elAwait) elAwait.textContent = awaiting;
+    }
+
     async function loadGlobalDevices() {
         const tbody = document.getElementById('devices-table-body');
         if (!tbody) return;
@@ -785,11 +1313,9 @@
         const res = await apiRequest('/api/license/hwids/all');
         if (res.success && Array.isArray(res.data)) {
             state.globalDevices = res.data;
-            const counter = document.getElementById('nav-counter-devices');
-            const ribbonCounter = document.getElementById('count-global-devices');
-            if (counter) counter.textContent = state.globalDevices.length;
-            if (ribbonCounter) ribbonCounter.textContent = `${state.globalDevices.length} devices`;
+            updateDeviceCounters();
             renderGlobalDevicesTable();
+            updateDashboardMetrics();
         } else {
             tbody.innerHTML = `
                 <tr>
@@ -806,9 +1332,32 @@
 
     function renderGlobalDevicesTable() {
         const tbody = document.getElementById('devices-table-body');
+        const footer = document.getElementById('devices-table-footer');
         if (!tbody) return;
 
-        let filtered = state.globalDevices;
+        let filtered = state.globalDevices || [];
+
+        if (state.deviceFilter === 'authorized') {
+            filtered = filtered.filter(d => !isDeviceBlocked(d));
+        } else if (state.deviceFilter === 'blocked') {
+            filtered = filtered.filter(isDeviceBlocked);
+        } else if (state.deviceFilter === 'live') {
+            filtered = filtered.filter(d => !isDeviceBlocked(d) && isDeviceLive(d));
+        } else if (state.deviceFilter === 'awaiting') {
+            filtered = filtered.filter(d => !d.last_seen_at);
+        }
+
+        const platFilter = document.getElementById('devices-platform-filter')?.value || state.devicePlatformFilter || 'all';
+        if (platFilter && platFilter !== 'all') {
+            filtered = filtered.filter(d => {
+                const p = (d.platform || '').toLowerCase();
+                if (platFilter === 'win32') return p.includes('win');
+                if (platFilter === 'darwin') return p.includes('darwin') || p.includes('mac');
+                if (platFilter === 'linux') return p.includes('linux');
+                return p === platFilter;
+            });
+        }
+
         if (state.devicesSearchQuery.trim()) {
             const q = state.devicesSearchQuery.toLowerCase().trim();
             filtered = filtered.filter(d => {
@@ -820,12 +1369,16 @@
             });
         }
 
+        if (footer) {
+            footer.textContent = `Showing ${filtered.length} of ${state.globalDevices.length} hardware devices`;
+        }
+
         if (filtered.length === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8">
                         <div class="table-empty">
-                            <div class="table-empty-text">No devices match query</div>
+                            <div class="table-empty-text">No devices match filter criteria</div>
                         </div>
                     </td>
                 </tr>
@@ -834,8 +1387,9 @@
         }
 
         tbody.innerHTML = filtered.map(d => {
-            const isBlocked = Boolean(d.is_blocked === 1 || d.is_blocked === true || d.is_blocked === '1');
-            const platformName = d.platform === 'linux' ? 'Linux' : (d.platform === 'darwin' ? 'macOS' : 'Windows');
+            const isBlocked = isDeviceBlocked(d);
+            const platRaw = (d.platform || '').toLowerCase();
+            const platformName = platRaw.includes('linux') ? 'Linux' : (platRaw.includes('darwin') || platRaw.includes('mac') ? 'macOS' : platRaw.includes('manual') ? 'Manual' : 'Windows');
             return `
                 <tr>
                     <td>
@@ -1010,7 +1564,8 @@
     }
 
     async function removeHwid(licenseId, hwid) {
-        if (!confirm('Unbind this hardware device? The machine will lose authorization.')) return;
+        const ok = await showConfirmModal('Unbind Hardware Device', `Unbind device ${hwid}?\n\nThe machine will immediately lose active seat authorization.`);
+        if (!ok) return;
         const res = await apiRequest(`/api/license/${licenseId}/hwids/${encodeURIComponent(hwid)}`, 'DELETE');
         if (res.success) {
             showToast('Hardware device unpinned', 'success');
@@ -1024,7 +1579,11 @@
 
     async function resetAllHwids() {
         if (!state.currentHwidLicense) return;
-        if (!confirm(`RESET ALL HARDWARE BINDINGS for license ${state.currentHwidLicense.license_key}?\nAll currently bound machines will be detached and must re-bind via TOFU.`)) return;
+        const ok = await showConfirmModal(
+            'Reset All Hardware Bindings',
+            `Reset all hardware bindings for license ${state.currentHwidLicense.license_key}?\n\nAll currently bound machines will be detached and must re-bind via TOFU.`
+        );
+        if (!ok) return;
 
         const res = await apiRequest(`/api/license/${state.currentHwidLicense.id}/hwids`, 'DELETE');
         if (res.success) {
@@ -1067,27 +1626,77 @@
     // LICENSE MUTATION
     // ─────────────────────────────────────────────────────────────────────────
     async function updateLicenseStatus(licenseId, newStatus) {
-        if (newStatus === 'revoked' && !confirm('ENGAGE IMMEDIATE REMOTE KILL-SWITCH?\n\nClient engines running this license will print ACCESS DENIED, purge local cache, and terminate immediately.')) {
-            return;
+        if (newStatus === 'revoked') {
+            const ok = await showConfirmModal(
+                'Engage Remote Kill-Switch',
+                'Client engines running this license will print ACCESS DENIED, purge local cache, and terminate immediately.'
+            );
+            if (!ok) return;
         }
 
         const res = await apiRequest(`/api/license/${licenseId}/status`, 'PATCH', { status: newStatus });
         if (res.success) {
             showToast(`License operational status set to ${newStatus}`, 'success');
             await loadLicenses();
+            loadAnalytics();
         } else {
             showToast(res.message || `Failed to update status`, 'error');
         }
     }
 
-    function openIssueModal() {
+    async function extendLicenseDays(licenseId, daysToAdd) {
+        const license = state.licenses.find(l => Number(l.id) === Number(licenseId));
+        if (!license) return;
+        const baseTime = Math.max(Date.now(), parseUTCDate(license.expiry_date)?.getTime() || Date.now());
+        const nextExpiry = new Date(baseTime + Number(daysToAdd || 30) * 86400000);
+        const res = await apiRequest(`/api/license/${licenseId}`, 'PUT', {
+            expiry_date: nextExpiry.toISOString(),
+            status: license.status === 'expired' ? 'active' : license.status
+        });
+        if (res.success) {
+            showToast(`Extended license ${license.license_key} by +${daysToAdd} days`, 'success');
+            await loadLicenses();
+            loadAnalytics();
+        } else {
+            showToast(res.message || 'Failed to extend license', 'error');
+        }
+    }
+
+    async function deleteLicense(licenseId) {
+        const license = state.licenses.find(l => Number(l.id) === Number(licenseId));
+        const label = license ? license.license_key : `#${licenseId}`;
+        const ok = await showConfirmModal(
+            'Delete License Permanently',
+            `Permanently delete license ${label} and all bound HWIDs?\n\nThis action cannot be undone.`
+        );
+        if (!ok) return;
+        const res = await apiRequest(`/api/license/${licenseId}`, 'DELETE');
+        if (res.success) {
+            showToast(`Deleted license ${label}`, 'success');
+            await loadLicenses();
+            loadGlobalDevices();
+            loadAnalytics();
+        } else {
+            showToast(res.message || 'Failed to delete license', 'error');
+        }
+    }
+
+    function openIssueModal(preselectedClientId) {
         const modal = document.getElementById('modal-issue-license');
         const select = document.getElementById('issue-client-id');
         if (select) {
             select.innerHTML = '<option value="">Select organization...</option>' +
                 state.clients.map(c => `<option value="${c.id}">${escapeHtml(c.org_name)} (${escapeHtml(c.email)})</option>`).join('');
+            if (preselectedClientId) {
+                select.value = String(preselectedClientId);
+            }
         }
         if (modal) modal.classList.add('open');
+    }
+
+    function openIssueModalForClient(clientId) {
+        closeModals();
+        openIssueModal(clientId);
     }
 
     function openEditLicenseModal(licenseId) {
@@ -1117,7 +1726,13 @@
         const tbody = document.getElementById('logs-table-body');
         if (!tbody) return;
 
-        const res = await apiRequest('/api/analytics/logs');
+        const actionFilter = document.getElementById('log-action-filter')?.value || state.telemetryActionFilter || 'all';
+        state.telemetryActionFilter = actionFilter;
+        const url = actionFilter && actionFilter !== 'all'
+            ? `/api/analytics/logs?limit=200&action_type=${encodeURIComponent(actionFilter)}`
+            : '/api/analytics/logs?limit=200';
+
+        const res = await apiRequest(url);
         if (res.success && Array.isArray(res.data)) {
             state.logs = res.data;
             renderLogsTable();
@@ -1125,13 +1740,78 @@
         }
     }
 
+    function toggleTelemetryTail() {
+        state.telemetryTailActive = !state.telemetryTailActive;
+        const btn = document.getElementById('btn-toggle-live-tail');
+        if (btn) btn.classList.toggle('active', state.telemetryTailActive);
+
+        if (state.telemetryTailTimer) {
+            clearInterval(state.telemetryTailTimer);
+            state.telemetryTailTimer = null;
+        }
+
+        if (state.telemetryTailActive) {
+            loadLogs();
+            state.telemetryTailTimer = setInterval(() => {
+                if (state.currentTab === 'telemetry') loadLogs();
+            }, 10000);
+            showToast('Live telemetry tail enabled (10s polling)', 'info');
+        } else {
+            showToast('Live telemetry tail paused', 'info');
+        }
+    }
+
+    async function downloadAuthorizedCsv(endpoint, defaultFilename) {
+        const token = getAuthToken();
+        if (!token) {
+            showToast('Session expired. Please log in again.', 'error');
+            return;
+        }
+        try {
+            const res = await fetch(endpoint, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) {
+                showToast(`CSV export failed (HTTP ${res.status})`, 'error');
+                return;
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = defaultFilename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(`Exported ${defaultFilename}`, 'success');
+        } catch (err) {
+            showToast('CSV download failed', 'error');
+        }
+    }
+
+    function exportTelemetryCsv() {
+        downloadAuthorizedCsv('/api/analytics/export/telemetry', `cortex-telemetry-${new Date().toISOString().slice(0, 10)}.csv`);
+    }
+
+    function exportLicensesCsv() {
+        downloadAuthorizedCsv('/api/analytics/export/licenses', `cortex-licenses-${new Date().toISOString().slice(0, 10)}.csv`);
+    }
+
     function renderLogsTable() {
         const tbody = document.getElementById('logs-table-body');
+        const footer = document.getElementById('telemetry-table-footer');
+        const countBadge = document.getElementById('count-telemetry-total');
         if (!tbody) return;
 
-        let filtered = state.logs;
+        let filtered = state.logs || [];
         const statusFilter = document.getElementById('log-status-filter')?.value;
+        const actionFilter = document.getElementById('log-action-filter')?.value;
         const searchInput = document.getElementById('log-search-input')?.value.toLowerCase().trim();
+
+        if (actionFilter && actionFilter !== 'all') {
+            filtered = filtered.filter(l => (l.action_type || l.action || '') === actionFilter);
+        }
 
         if (statusFilter && statusFilter !== 'all') {
             filtered = filtered.filter(l => l.status === statusFilter);
@@ -1148,6 +1828,9 @@
             });
         }
 
+        if (countBadge) countBadge.textContent = `${filtered.length} events`;
+        if (footer) footer.textContent = `Showing ${filtered.length} of ${state.logs.length} telemetry events`;
+
         if (filtered.length === 0) {
             tbody.innerHTML = `
                 <tr>
@@ -1161,11 +1844,12 @@
             return;
         }
 
-        tbody.innerHTML = filtered.map(log => {
+        tbody.innerHTML = filtered.map((log, idx) => {
             const isSuccess = log.status === 'success';
             const logTimestamp = log.created_at || log.timestamp;
             const logAction = log.action_type || log.action || 'ping';
             const logReason = getLogReason(log);
+            const inspectKey = log.id !== undefined && log.id !== null ? `'${log.id}'` : String(idx);
 
             return `
                 <tr>
@@ -1194,7 +1878,7 @@
                         <span style="font-size: 11.5px; color: ${isSuccess ? 'var(--text-secondary)' : 'var(--ruby)'};">${escapeHtml(logReason)}</span>
                     </td>
                     <td class="align-right">
-                        <button class="btn btn-secondary btn-sm" onclick="window.app.inspectLogPayload('${log.id}')">
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.inspectLogPayload(${inspectKey})">
                             Inspect
                         </button>
                     </td>
@@ -1218,8 +1902,11 @@
         return log.status === 'success' ? 'Telemetry validation OK' : 'Verification denied';
     }
 
-    function inspectLogPayload(logId) {
-        const log = state.logs.find(l => String(l.id) === String(logId));
+    function openPayloadInspector(indexOrId) {
+        let log = state.logs[indexOrId];
+        if (!log) {
+            log = state.logs.find(l => String(l.id) === String(indexOrId));
+        }
         if (!log) return;
         const modal = document.getElementById('modal-log-payload');
         const pre = document.getElementById('log-json-modal-content');
@@ -1228,29 +1915,55 @@
             if (typeof payloadObj === 'string') {
                 try { payloadObj = JSON.parse(payloadObj); } catch (_) {}
             }
-            pre.textContent = JSON.stringify(payloadObj || log, null, 2);
+            pre.textContent = JSON.stringify({ ...log, parsed_metadata: payloadObj || null }, null, 2);
         }
         if (modal) modal.classList.add('open');
     }
 
+    function inspectLogPayload(logId) {
+        openPayloadInspector(logId);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
-    // CLIENT DIRECTORY
+    // CLIENT DIRECTORY & 360 ORGANIZATION VIEW
     // ─────────────────────────────────────────────────────────────────────────
+    function updateClientCounters() {
+        const all = state.clients || [];
+        const active = all.filter(c => c.status === 'active').length;
+        const suspended = all.filter(c => c.status === 'suspended').length;
+        const inactive = all.filter(c => c.status === 'inactive').length;
+
+        const navCli = document.getElementById('nav-counter-clients');
+        const elAll = document.getElementById('count-clients-all');
+        const elAct = document.getElementById('count-clients-active');
+        const elSus = document.getElementById('count-clients-suspended');
+        const elInact = document.getElementById('count-clients-inactive');
+
+        if (navCli) navCli.textContent = all.length;
+        if (elAll) elAll.textContent = all.length;
+        if (elAct) elAct.textContent = active;
+        if (elSus) elSus.textContent = suspended;
+        if (elInact) elInact.textContent = inactive;
+    }
+
     async function loadClients() {
         const res = await apiRequest('/api/clients');
         if (res.success && Array.isArray(res.data)) {
             state.clients = res.data;
+            updateClientCounters();
             renderClientsTable();
             updateDashboardMetrics();
+            populateSupportClientPicker();
         }
     }
 
     function renderClientsTable() {
         const tbody = document.getElementById('clients-table-body');
+        const footer = document.getElementById('clients-table-footer');
         if (!tbody) return;
 
-        let filtered = state.clients;
-        const statusFilter = document.getElementById('client-status-filter')?.value;
+        let filtered = state.clients || [];
+        const statusFilter = state.clientFilter || 'all';
         const searchInput = document.getElementById('client-search-input')?.value.toLowerCase().trim();
 
         if (statusFilter && statusFilter !== 'all') {
@@ -1266,10 +1979,14 @@
             });
         }
 
+        if (footer) {
+            footer.textContent = `Showing ${filtered.length} of ${state.clients.length} client organizations`;
+        }
+
         if (filtered.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="7">
+                    <td colspan="8">
                         <div class="table-empty">
                             <div class="table-empty-text">No client organizations found</div>
                         </div>
@@ -1279,10 +1996,14 @@
             return;
         }
 
-        tbody.innerHTML = filtered.map(c => `
+        tbody.innerHTML = filtered.map(c => {
+            const activeLic = Number(c.active_licenses ?? 0);
+            const totalLic = Number(c.total_licenses ?? 0);
+            const nextStatus = c.status === 'active' ? 'suspended' : 'active';
+            return `
             <tr>
                 <td>
-                    <span style="font-size: 13px; font-weight: 600; color: var(--text-white);">${escapeHtml(c.org_name)}</span>
+                    <span class="clickable-org" style="font-size: 13px; font-weight: 600;" onclick="window.app.openClientDetailModal(${Number(c.id)})">${escapeHtml(c.org_name)}</span>
                 </td>
                 <td>
                     <span style="font-size: 12.5px; color: var(--text-primary);">${escapeHtml(c.contact_name)}</span>
@@ -1294,7 +2015,10 @@
                     <span style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">${escapeHtml(c.phone || '---')}</span>
                 </td>
                 <td>
-                    <span class="status-pill ${c.status === 'active' ? 'active' : 'suspended'}" style="font-size: 10.5px; padding: 1px 6px;">
+                    <span class="badge-metric">${activeLic}/${totalLic} active</span>
+                </td>
+                <td>
+                    <span class="status-pill ${c.status === 'active' ? 'active' : (c.status === 'suspended' ? 'suspended' : 'revoked')}" style="font-size: 10.5px; padding: 1px 6px;">
                         <span class="indicator-dot"></span>
                         <span>${c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : 'Active'}</span>
                     </span>
@@ -1304,13 +2028,133 @@
                 </td>
                 <td class="align-right">
                     <div class="row-actions">
-                        <button class="btn btn-secondary btn-sm" onclick="window.app.openEditClientModal('${c.id}')">
-                            Edit
-                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.openClientDetailModal(${Number(c.id)})">Inspect</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.openIssueModalForClient(${Number(c.id)})">+ Key</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.openEditClientModal('${c.id}')">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.toggleClientStatus(${Number(c.id)}, '${nextStatus}')">${c.status === 'active' ? 'Suspend' : 'Activate'}</button>
+                        <button class="btn btn-danger btn-sm" onclick="window.app.deleteClient(${Number(c.id)})">Delete</button>
                     </div>
                 </td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
+    }
+
+    async function openClientDetailModal(clientId) {
+        if (!clientId) return;
+        const modal = document.getElementById('modal-client-detail');
+        const orgEl = document.getElementById('client-detail-org');
+        const subEl = document.getElementById('client-detail-sub');
+        const bodyEl = document.getElementById('client-detail-body');
+        const btnIssue = document.getElementById('btn-client-detail-issue');
+        const btnEmail = document.getElementById('btn-client-detail-email');
+        if (!modal || !bodyEl) return;
+
+        if (orgEl) orgEl.textContent = 'Loading Organization...';
+        if (subEl) subEl.textContent = 'Fetching live licenses and OAuth connectors...';
+        bodyEl.innerHTML = '<div class="table-empty"><div class="table-empty-text">Loading tenant profile...</div></div>';
+        modal.classList.add('open');
+
+        const res = await apiRequest(`/api/clients/${clientId}`);
+        if (!res.success || !res.data) {
+            bodyEl.innerHTML = `<div class="table-empty"><div class="table-empty-text" style="color: var(--ruby);">${escapeHtml(res.message || 'Failed to load client details')}</div></div>`;
+            return;
+        }
+
+        const client = res.data;
+        const licenses = Array.isArray(client.licenses) ? client.licenses : [];
+        const connectors = Array.isArray(client.connectors) ? client.connectors : [];
+        const activeCount = licenses.filter(l => l.status === 'active').length;
+        const connectedCount = connectors.filter(cn => cn.status === 'connected' || cn.is_connected).length;
+
+        if (orgEl) orgEl.textContent = client.org_name || 'Organization';
+        if (subEl) subEl.textContent = `${client.contact_name || 'Contact'} • ${client.email || 'No email'} • Status: ${(client.status || 'active').toUpperCase()}`;
+
+        if (btnIssue) {
+            btnIssue.onclick = () => openIssueModalForClient(client.id);
+        }
+        if (btnEmail) {
+            btnEmail.onclick = () => {
+                closeModals();
+                switchTab('support-mail');
+                const toInput = document.getElementById('supp-to-input');
+                if (toInput && client.email) toInput.value = client.email;
+            };
+        }
+
+        bodyEl.innerHTML = `
+            <div class="client-detail-grid">
+                <div class="client-detail-stat">
+                    <div class="client-detail-stat-label">Total Licenses</div>
+                    <div class="client-detail-stat-val">${licenses.length}</div>
+                </div>
+                <div class="client-detail-stat">
+                    <div class="client-detail-stat-label">Active Keys</div>
+                    <div class="client-detail-stat-val" style="color: var(--emerald);">${activeCount}</div>
+                </div>
+                <div class="client-detail-stat">
+                    <div class="client-detail-stat-label">OAuth Connectors</div>
+                    <div class="client-detail-stat-val">${connectors.length} (${connectedCount} live)</div>
+                </div>
+                <div class="client-detail-stat">
+                    <div class="client-detail-stat-label">Phone</div>
+                    <div class="client-detail-stat-val" style="font-size: 13px; font-family: var(--font-mono);">${escapeHtml(client.phone || '---')}</div>
+                </div>
+            </div>
+            <div>
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px;">Provisioned Licenses (${licenses.length})</div>
+                ${licenses.length === 0 ? '<div style="font-size: 12px; color: var(--text-muted);">No licenses issued for this tenant yet.</div>' : `
+                    <div style="display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto;">
+                        ${licenses.map(l => `
+                            <div class="watchlist-row">
+                                <div class="watchlist-row-main">
+                                    <span class="watchlist-row-title font-mono">${escapeHtml(l.license_key)}</span>
+                                    <span class="watchlist-row-sub">Seats: ${l.max_machines || 1} • Expires: ${formatDate(l.expiry_date)}</span>
+                                </div>
+                                <span class="status-pill ${l.status === 'active' ? 'active' : (l.status === 'suspended' ? 'suspended' : 'revoked')}" style="font-size: 10.5px;">${escapeHtml(l.status)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `}
+            </div>
+            <div style="margin-top: 8px;">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px;">Cloud OAuth Connectors (${connectors.length})</div>
+                ${connectors.length === 0 ? '<div style="font-size: 12px; color: var(--text-muted);">No OAuth connectors linked by this client.</div>' : `
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        ${connectors.map(cn => `
+                            <span class="badge-metric">${escapeHtml(cn.provider || cn.connector_name || 'OAuth')}: ${escapeHtml(cn.account_email || cn.status || 'Linked')}</span>
+                        `).join('')}
+                    </div>
+                `}
+            </div>
+        `;
+    }
+
+    async function toggleClientStatus(clientId, nextStatus) {
+        const res = await apiRequest(`/api/clients/${clientId}/status`, 'PATCH', { status: nextStatus });
+        if (res.success) {
+            showToast(`Client status set to ${nextStatus}`, 'success');
+            await loadClients();
+        } else {
+            showToast(res.message || 'Failed to update client status', 'error');
+        }
+    }
+
+    async function deleteClient(clientId) {
+        const client = state.clients.find(c => Number(c.id) === Number(clientId));
+        const ok = await showConfirmModal(
+            'Delete Client Organization',
+            `Permanently remove "${client?.org_name || clientId}" and its associated records?\n\nThis action cannot be undone.`
+        );
+        if (!ok) return;
+        const res = await apiRequest(`/api/clients/${clientId}`, 'DELETE');
+        if (res.success) {
+            showToast('Organization removed', 'success');
+            await loadClients();
+            await loadLicenses();
+        } else {
+            showToast(res.message || 'Failed to delete client', 'error');
+        }
     }
 
     function openEditClientModal(clientId) {
@@ -1340,6 +2184,14 @@
                 const banner = document.getElementById('resend-api-banner');
                 const title = document.getElementById('resend-banner-title');
                 const desc = document.getElementById('resend-banner-desc');
+                const isLive = Boolean(res.data.configured && res.data.valid);
+
+                ['bcast-resend-status-pill', 'supp-resend-status-pill'].forEach(pillId => {
+                    const pill = document.getElementById(pillId);
+                    if (!pill) return;
+                    pill.classList.toggle('connected', isLive);
+                    pill.classList.toggle('offline', !isLive);
+                });
 
                 if (banner) {
                     if (!res.data.configured) {
@@ -1406,8 +2258,52 @@
     function updateAudienceMetrics() {
         const idEl = document.getElementById('bcast-metric-id');
         const countEl = document.getElementById('bcast-metric-count');
+        const subEl = document.getElementById('bcast-metric-subscribed');
+        const subscribedCount = (state.contacts || []).filter(c => !c.unsubscribed).length;
         if (idEl) idEl.textContent = state.currentAudienceId || '---';
         if (countEl) countEl.textContent = state.contacts.length;
+        if (subEl) subEl.textContent = subscribedCount;
+    }
+
+    async function syncClientsToAudience() {
+        if (!state.currentAudienceId) {
+            showToast('Select or create a Resend audience first', 'error');
+            return;
+        }
+        const existingEmails = new Set((state.contacts || []).map(c => String(c.email || '').toLowerCase()));
+        const candidates = (state.clients || [])
+            .filter(c => c.status === 'active' && c.email && c.email.includes('@'))
+            .filter(c => !existingEmails.has(String(c.email).toLowerCase()))
+            .map(c => {
+                const parts = String(c.contact_name || c.org_name || '').trim().split(/\s+/);
+                return {
+                    email: c.email.trim(),
+                    first_name: parts[0] || c.org_name || 'Partner',
+                    last_name: parts.slice(1).join(' ') || ''
+                };
+            });
+
+        if (candidates.length === 0) {
+            showToast('All active Cortex clients are already in this audience', 'info');
+            return;
+        }
+
+        const ok = await showConfirmModal(
+            'Sync Clients to Resend Audience',
+            `Import ${candidates.length} active client email(s) from your Clients directory into the selected Resend audience?`
+        );
+        if (!ok) return;
+
+        const res = await apiRequest('/api/email/contacts/import-csv', 'POST', {
+            segmentId: state.currentAudienceId,
+            contacts: candidates
+        });
+        if (res.success) {
+            showToast(`Synced ${candidates.length} client contact(s) to Resend`, 'success');
+            await loadContacts(state.currentAudienceId);
+        } else {
+            showToast(res.message || 'Failed to sync clients to audience', 'error');
+        }
     }
 
     async function loadContacts(audienceId) {
@@ -1503,7 +2399,8 @@
     }
 
     async function deleteContact(idOrEmail) {
-        if (!confirm(`Are you sure you want to permanently remove subscriber "${idOrEmail}" from Resend?`)) return;
+        const ok = await showConfirmModal('Remove Subscriber', `Permanently remove subscriber "${idOrEmail}" from Resend?`);
+        if (!ok) return;
         const res = await apiRequest(`/api/email/contacts/${encodeURIComponent(idOrEmail)}`, 'DELETE');
         if (res.success) {
             showToast('Subscriber removed from Resend', 'info');
@@ -1520,7 +2417,8 @@
         }
         const current = state.audiences.find(a => a.id === state.currentAudienceId);
         const name = current ? current.name : state.currentAudienceId;
-        if (!confirm(`Are you sure you want to delete audience "${name}" from Resend? This action cannot be undone.`)) return;
+        const ok = await showConfirmModal('Delete Audience', `Delete audience "${name}" from Resend?\n\nThis action cannot be undone.`);
+        if (!ok) return;
 
         const res = await apiRequest(`/api/email/segments/${encodeURIComponent(state.currentAudienceId)}`, 'DELETE');
         if (res.success) {
@@ -2467,8 +3365,9 @@
         }
     }
 
-    function resetBroadcastComposer() {
-        if (!confirm('Discard changes and reset the broadcast composer?')) return;
+    async function resetBroadcastComposer() {
+        const ok = await showConfirmModal('Reset Broadcast Composer', 'Discard current edits and restore the default CortexCo template?');
+        if (!ok) return;
         const camp = document.getElementById('bcast-campaign-name-input');
         const subj = document.getElementById('bcast-subject-input');
         const pre = document.getElementById('bcast-preview-text-input');
@@ -2513,7 +3412,7 @@
         }
 
         if (sendNow) {
-            const confirmed = confirm(`Are you sure you want to send this broadcast to all subscribers in this audience?`);
+            const confirmed = await showConfirmModal('Dispatch Broadcast Campaign', 'Send this broadcast immediately to all subscribers in the selected audience?');
             if (!confirmed) return;
         }
 
@@ -2634,7 +3533,8 @@
     }
 
     async function sendDraftBroadcast(broadcastId) {
-        if (!confirm('Are you sure you want to trigger immediate sending of this draft broadcast?')) return;
+        const ok = await showConfirmModal('Send Draft Broadcast', 'Trigger immediate sending of this draft broadcast to its audience?');
+        if (!ok) return;
         const res = await apiRequest(`/api/email/broadcasts/${encodeURIComponent(broadcastId)}/send`, 'POST');
         if (res.success) {
             showToast('Broadcast triggered successfully!', 'success');
@@ -2847,16 +3747,79 @@
         }
     }
 
+    function populateSupportClientPicker() {
+        const picker = document.getElementById('supp-client-picker');
+        if (!picker) return;
+        const clients = (state.clients || []).filter(c => c.email && c.email.includes('@'));
+        picker.innerHTML = '<option value="">Pick Client...</option>' +
+            clients.map(c => `<option value="${escapeHtml(c.email)}">${escapeHtml(c.org_name)} — ${escapeHtml(c.email)}</option>`).join('');
+    }
+
+    function pickSupportClientRecipient(email) {
+        if (!email) return;
+        const toInput = document.getElementById('supp-to-input');
+        if (toInput) toInput.value = email;
+    }
+
+    function applySupportTemplate(templateKey) {
+        const subjInput = document.getElementById('supp-subject-input');
+        const canvas = document.getElementById('supp-editor-canvas');
+        if (!canvas) return;
+
+        const signatureBlock = `<br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 72px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 11px; color: #475569; margin-top: 2px;">CortexCo Engineering Infrastructure</div><div style="margin-top: 6px;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table>`;
+
+        const templates = {
+            welcome: {
+                subject: 'Welcome to CortexCo — Your Workspace Onboarding Details',
+                body: `<p>Hello,</p><p>Welcome to <strong>CortexCo</strong>! Your workspace entitlements are active and ready for deployment.</p><p>If you need any assistance binding machines or configuring connectors, reply directly to this message.</p>`
+            },
+            renewal: {
+                subject: 'Action Recommended: CortexCo License Renewal Notice',
+                body: `<p>Hello,</p><p>This is a friendly heads-up that your active CortexCo license is approaching its scheduled expiration window.</p><p>Please reply to confirm renewal terms so we can extend your validity seamlessly without service interruption.</p>`
+            },
+            quota: {
+                subject: 'Seat Quota Expanded on Your CortexCo License',
+                body: `<p>Hello,</p><p>We have increased the maximum bound machine seats on your CortexCo license as requested.</p><p>Additional workstations can now activate automatically via standard handshake startup.</p>`
+            },
+            resolved: {
+                subject: 'Resolved: Your CortexCo Support Request',
+                body: `<p>Hello,</p><p>We are writing to confirm that the issue reported for your CortexCo environment has been resolved and verified.</p><p>Let us know if you observe any further anomalies.</p>`
+            }
+        };
+
+        const tpl = templates[templateKey];
+        if (!tpl) return;
+        if (subjInput) subjInput.value = tpl.subject;
+        canvas.innerHTML = tpl.body + signatureBlock;
+        showToast('Applied support email template', 'info');
+    }
+
     function updateTrackerCounts() {
+        const total = state.sentEmails.length;
+        const delivered = state.sentEmails.filter(e => e.last_event === 'delivered').length;
+        const opened = state.sentEmails.filter(e => e.last_event === 'opened' || e.last_event === 'clicked').length;
+        const bounced = state.sentEmails.filter(e => e.last_event === 'bounced' || e.last_event === 'complained').length;
+        const deliveryRate = total > 0 ? Math.round(((total - bounced) / total) * 100) : 100;
+
         const totalEl = document.getElementById('count-tracker-all');
         const delEl = document.getElementById('count-tracker-delivered');
         const openEl = document.getElementById('count-tracker-opened');
         const bncEl = document.getElementById('count-tracker-bounced');
 
-        if (totalEl) totalEl.textContent = state.sentEmails.length;
-        if (delEl) delEl.textContent = state.sentEmails.filter(e => e.last_event === 'delivered').length;
-        if (openEl) openEl.textContent = state.sentEmails.filter(e => e.last_event === 'opened' || e.last_event === 'clicked').length;
-        if (bncEl) bncEl.textContent = state.sentEmails.filter(e => e.last_event === 'bounced' || e.last_event === 'complained').length;
+        if (totalEl) totalEl.textContent = total;
+        if (delEl) delEl.textContent = delivered;
+        if (openEl) openEl.textContent = opened;
+        if (bncEl) bncEl.textContent = bounced;
+
+        const kpiTotal = document.getElementById('supp-kpi-total');
+        const kpiDel = document.getElementById('supp-kpi-delivered');
+        const kpiOpen = document.getElementById('supp-kpi-opened');
+        const kpiRate = document.getElementById('supp-kpi-rate');
+
+        if (kpiTotal) kpiTotal.textContent = total;
+        if (kpiDel) kpiDel.textContent = delivered;
+        if (kpiOpen) kpiOpen.textContent = opened;
+        if (kpiRate) kpiRate.textContent = `${deliveryRate}%`;
     }
 
     function filterTracker(status, btnEl) {
@@ -3117,6 +4080,46 @@
 
     function closeModals() {
         document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+        if (state.confirmResolver) {
+            const resolver = state.confirmResolver;
+            state.confirmResolver = null;
+            resolver(false);
+        }
+    }
+
+    function showConfirmModal(title, message, confirmLabel = 'Confirm') {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('modal-confirm');
+            const titleEl = document.getElementById('confirm-modal-title');
+            const msgEl = document.getElementById('confirm-modal-message');
+            const okBtn = document.getElementById('confirm-modal-ok');
+
+            if (!modal || !okBtn) {
+                resolve(window.confirm(`${title}\n\n${message}`));
+                return;
+            }
+
+            if (state.confirmResolver) {
+                state.confirmResolver(false);
+            }
+            state.confirmResolver = resolve;
+
+            if (titleEl) titleEl.textContent = title || 'Confirm Action';
+            if (msgEl) msgEl.textContent = message || '';
+            okBtn.textContent = confirmLabel || 'Confirm';
+            okBtn.onclick = () => closeConfirmModal(true);
+            modal.classList.add('open');
+        });
+    }
+
+    function closeConfirmModal(confirmed) {
+        const modal = document.getElementById('modal-confirm');
+        if (modal) modal.classList.remove('open');
+        if (state.confirmResolver) {
+            const resolver = state.confirmResolver;
+            state.confirmResolver = null;
+            resolver(Boolean(confirmed));
+        }
     }
 
     function copyKey(text, btn) {
@@ -3131,11 +4134,6 @@
         });
     }
 
-    function copySimulatorJson() {
-        const pre = document.getElementById('sim-json-output');
-        if (pre) copyKey(pre.textContent);
-    }
-
     function updateLiveClock() {
         const clockEl = document.getElementById('live-clock');
         if (!clockEl) return;
@@ -3146,6 +4144,295 @@
         const ampm = hours >= 12 ? 'PM' : 'AM';
         hours = hours % 12 || 12;
         clockEl.textContent = `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+    }
+
+    async function checkSystemHealth(showFeedback = false) {
+        const pill = document.getElementById('env-health-pill');
+        const text = document.getElementById('env-health-text');
+        const latencyEl = document.getElementById('dash-api-latency');
+        const clusterPill = document.getElementById('dash-cluster-status-pill');
+        const t0 = performance.now();
+
+        try {
+            const res = await fetch('/api/health', { headers: { 'Accept': 'application/json' } });
+            const ms = Math.max(1, Math.round(performance.now() - t0));
+            const data = await res.json().catch(() => ({}));
+            const ok = res.ok && (data.status === 'ok' || data.success !== false);
+            state.systemHealth = { ok, ms, ...data };
+
+            if (text) text.textContent = ok ? `System Online (${ms}ms)` : 'Degraded';
+            if (pill) {
+                pill.classList.toggle('degraded', !ok);
+            }
+            if (latencyEl) {
+                latencyEl.textContent = ok ? `${ms} ms • DB ${data.database || 'connected'}` : 'Degraded';
+                latencyEl.style.color = ok ? 'var(--emerald)' : 'var(--ruby)';
+            }
+            if (clusterPill) {
+                clusterPill.className = `status-pill ${ok ? 'active' : 'revoked'}`;
+                clusterPill.style.fontSize = '11px';
+                clusterPill.textContent = ok ? 'Operational' : 'Degraded';
+            }
+            if (showFeedback) {
+                showToast(ok ? `API & Database healthy (${ms}ms latency)` : 'Health check reported degraded state', ok ? 'success' : 'error');
+            }
+        } catch (err) {
+            if (text) text.textContent = 'Offline';
+            if (latencyEl) {
+                latencyEl.textContent = 'Unreachable';
+                latencyEl.style.color = 'var(--ruby)';
+            }
+            if (clusterPill) {
+                clusterPill.className = 'status-pill revoked';
+                clusterPill.textContent = 'Offline';
+            }
+            if (showFeedback) showToast('Failed to reach /api/health', 'error');
+        }
+    }
+
+    function setAutoRefresh(seconds) {
+        if (state.autoRefreshTimer) {
+            clearInterval(state.autoRefreshTimer);
+            state.autoRefreshTimer = null;
+        }
+        const sec = parseInt(seconds, 10) || 0;
+        state.autoRefreshSeconds = sec;
+        if (sec > 0) {
+            state.autoRefreshTimer = setInterval(() => {
+                if (!getAuthToken()) return;
+                loadLicenses();
+                loadClients();
+                loadAnalytics();
+                if (state.currentTab === 'devices') loadGlobalDevices();
+                if (state.currentTab === 'telemetry') loadLogs();
+            }, sec * 1000);
+            showToast(`Auto-refresh active every ${sec}s`, 'info');
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TEAM & SECURITY CONTROL (Admins + In-Memory Rate Limit Telemetry)
+    // ─────────────────────────────────────────────────────────────────────────
+    async function loadAdminsTab() {
+        const [adminsRes, secRes, healthRes] = await Promise.all([
+            apiRequest('/api/admin'),
+            apiRequest('/api/admin/security-status'),
+            fetch('/api/health').then(r => r.json()).catch(() => null)
+        ]);
+
+        if (adminsRes && adminsRes.success && Array.isArray(adminsRes.data)) {
+            state.admins = adminsRes.data;
+            renderAdminsTable();
+        }
+
+        if (secRes && secRes.success && secRes.data) {
+            state.securityStatus = secRes.data;
+            const rl = secRes.data.authRateLimit || secRes.data.loginRateLimit || {};
+            const rlVal = document.getElementById('sec-rate-limit-val');
+            const rlSub = document.getElementById('sec-rate-limit-sub');
+            const algEl = document.getElementById('sec-token-alg');
+            const metaEl = document.getElementById('sec-health-meta');
+            const healthStatusEl = document.getElementById('sec-health-status');
+
+            const windowSec = rl.windowSeconds || (rl.windowMs ? Math.round(rl.windowMs / 1000) : 60);
+            const storeLabel = rl.storeBackend === 'in-memory-ram' ? 'In-Memory RAM' : (rl.storeBackend || 'In-Memory RAM');
+            const tracked = Number(rl.trackedClients ?? rl.activeTrackedClients ?? 0);
+
+            if (rlVal) rlVal.textContent = `${rl.maxRequests || 10} req / ${windowSec}s`;
+            if (rlSub) rlSub.textContent = `${storeLabel} • ${tracked} active IP bucket(s)`;
+            if (algEl) algEl.textContent = secRes.data.tokenAlgorithm || 'HMAC-SHA256';
+            if (metaEl) metaEl.textContent = `Env: ${secRes.data.environment || 'standalone'} • Uptime: ${Math.floor((secRes.data.uptimeSeconds || 0) / 60)}m`;
+            if (healthStatusEl && healthRes) {
+                const ok = healthRes.status === 'ok' || healthRes.success !== false;
+                healthStatusEl.textContent = ok ? 'Online' : 'Degraded';
+                healthStatusEl.style.color = ok ? 'var(--emerald)' : 'var(--ruby)';
+            }
+        }
+    }
+
+    function renderAdminsTable() {
+        const tbody = document.getElementById('admins-table-body');
+        const countEl = document.getElementById('sec-admin-count');
+        const admins = state.admins || [];
+        if (countEl) countEl.textContent = admins.length;
+        if (!tbody) return;
+
+        if (admins.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6"><div class="table-empty"><div class="table-empty-text">No administrators found</div></div></td></tr>';
+            return;
+        }
+
+        const isSuper = state.currentAdmin?.role === 'super_admin';
+        tbody.innerHTML = admins.map(a => {
+            const isSelf = Number(state.currentAdmin?.id) === Number(a.id);
+            const roleLabel = a.role === 'super_admin' ? 'Super Admin' : 'Operator Admin';
+            return `
+                <tr>
+                    <td><strong style="color: var(--text-white);">${escapeHtml(a.name)}</strong>${isSelf ? ' <span class="badge-metric" style="margin-left:4px;">You</span>' : ''}</td>
+                    <td><span class="font-mono" style="font-size: 12px;">${escapeHtml(a.email)}</span></td>
+                    <td><span class="status-pill ${a.role === 'super_admin' ? 'active' : 'suspended'}" style="font-size: 10.5px;">${roleLabel}</span></td>
+                    <td><span class="status-pill ${a.is_active ? 'active' : 'revoked'}" style="font-size: 10.5px;">${a.is_active ? 'Active' : 'Disabled'}</span></td>
+                    <td><span style="font-size: 11.5px; color: var(--text-muted);">${formatDate(a.created_at)}</span></td>
+                    <td class="align-right">
+                        <div class="row-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.editAdminUser(${Number(a.id)})">Edit</button>
+                            ${!isSelf ? `<button type="button" class="btn btn-danger btn-sm" onclick="window.app.deleteAdminUser(${Number(a.id)})" ${!isSuper ? 'title="Super Admin privileges required"' : ''}>Remove</button>` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function openAdminModal(adminObj = null) {
+        const modal = document.getElementById('modal-admin-form');
+        const title = document.getElementById('admin-modal-title');
+        const idInput = document.getElementById('admin-form-id');
+        const nameInput = document.getElementById('admin-form-name');
+        const emailInput = document.getElementById('admin-form-email');
+        const roleSelect = document.getElementById('admin-form-role');
+        const pwdInput = document.getElementById('admin-form-password');
+        const pwdHint = document.getElementById('admin-pwd-hint');
+
+        if (!modal) return;
+        if (adminObj) {
+            if (title) title.textContent = `Edit Administrator: ${adminObj.name}`;
+            if (idInput) idInput.value = adminObj.id;
+            if (nameInput) nameInput.value = adminObj.name || '';
+            if (emailInput) emailInput.value = adminObj.email || '';
+            if (roleSelect) roleSelect.value = adminObj.role || 'admin';
+            if (pwdInput) { pwdInput.value = ''; pwdInput.required = false; }
+            if (pwdHint) pwdHint.textContent = '(leave blank to keep current password)';
+        } else {
+            if (title) title.textContent = 'Add Administrator';
+            if (idInput) idInput.value = '';
+            if (nameInput) nameInput.value = '';
+            if (emailInput) emailInput.value = '';
+            if (roleSelect) roleSelect.value = 'admin';
+            if (pwdInput) { pwdInput.value = ''; pwdInput.required = true; }
+            if (pwdHint) pwdHint.textContent = '(min 6 chars, required)';
+        }
+        modal.classList.add('open');
+    }
+
+    function editAdminUser(adminId) {
+        const admin = state.admins.find(a => Number(a.id) === Number(adminId));
+        if (admin) openAdminModal(admin);
+    }
+
+    async function deleteAdminUser(adminId) {
+        const admin = state.admins.find(a => Number(a.id) === Number(adminId));
+        const ok = await showConfirmModal('Remove Administrator', `Revoke console access for "${admin?.email || adminId}"?`);
+        if (!ok) return;
+        const res = await apiRequest(`/api/admin/${adminId}`, 'DELETE');
+        if (res.success) {
+            showToast('Administrator removed', 'success');
+            await loadAdminsTab();
+        } else {
+            showToast(res.message || 'Failed to delete administrator (Super Admin required)', 'error');
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COMMAND PALETTE (Ctrl+K / Cmd+K)
+    // ─────────────────────────────────────────────────────────────────────────
+    function openCommandPalette() {
+        const modal = document.getElementById('modal-cmdk');
+        const input = document.getElementById('cmdk-input');
+        if (!modal) return;
+        modal.classList.add('open');
+        if (input) {
+            input.value = '';
+            setTimeout(() => input.focus(), 20);
+        }
+        state.cmdkIndex = 0;
+        renderCommandPalette('');
+    }
+
+    function buildCommandItems(query) {
+        const q = (query || '').toLowerCase().trim();
+        const navItems = [
+            { section: 'Navigation', label: 'Executive Dashboard', meta: 'Tab 1', action: () => switchTab('dashboard') },
+            { section: 'Navigation', label: 'Licenses & Entitlements', meta: 'Tab 2', action: () => switchTab('licenses') },
+            { section: 'Navigation', label: 'Hardware Fleet Devices', meta: 'Tab 3', action: () => switchTab('devices') },
+            { section: 'Navigation', label: 'Client Organizations', meta: 'Tab 4', action: () => switchTab('clients') },
+            { section: 'Navigation', label: 'Telemetry Audit Stream', meta: 'Tab 5', action: () => switchTab('telemetry') },
+            { section: 'Navigation', label: 'Broadcasts & Segments', meta: 'Resend', action: () => switchTab('broadcasts') },
+            { section: 'Navigation', label: 'Support 1-to-1 Mail', meta: 'Resend', action: () => switchTab('support-mail') },
+            { section: 'Navigation', label: 'Team & Security Control', meta: 'Admins & Rate Limit', action: () => switchTab('admins') },
+            { section: 'Quick Actions', label: 'Issue New Cryptographic License', meta: 'Create Key', action: () => openIssueModal() },
+            { section: 'Quick Actions', label: 'Register Client Organization', meta: 'New Client', action: () => { const m = document.getElementById('modal-add-client'); if (m) m.classList.add('open'); } },
+            { section: 'Quick Actions', label: 'Export Licenses CSV', meta: 'Download', action: () => exportLicensesCsv() },
+            { section: 'Quick Actions', label: 'Export Telemetry CSV', meta: 'Download', action: () => exportTelemetryCsv() },
+            { section: 'Quick Actions', label: 'Run Live API Health Check', meta: '/api/health', action: () => checkSystemHealth(true) }
+        ];
+
+        const licenseItems = (state.licenses || []).slice(0, 60).map(l => ({
+            section: 'Licenses',
+            label: `${l.license_key} — ${l.org_name || 'Organization'}`,
+            meta: `${l.status || 'active'} • ${l.bound_machines_count || 0}/${l.max_machines || 1} seats`,
+            action: () => {
+                switchTab('licenses');
+                const search = document.getElementById('license-search-input');
+                if (search) {
+                    search.value = l.license_key;
+                    state.searchQuery = l.license_key;
+                    renderLicensesTable();
+                }
+            }
+        }));
+
+        const clientItems = (state.clients || []).slice(0, 40).map(c => ({
+            section: 'Clients',
+            label: c.org_name,
+            meta: `${c.email || ''} • ${c.status || 'active'}`,
+            action: () => openClientDetailModal(c.id)
+        }));
+
+        const all = [...navItems, ...licenseItems, ...clientItems];
+        if (!q) return all.slice(0, 14);
+        return all.filter(item =>
+            item.label.toLowerCase().includes(q) ||
+            item.meta.toLowerCase().includes(q) ||
+            item.section.toLowerCase().includes(q)
+        ).slice(0, 18);
+    }
+
+    function renderCommandPalette(query) {
+        const container = document.getElementById('cmdk-results');
+        if (!container) return;
+
+        const items = buildCommandItems(query);
+        state.cmdkItems = items;
+        if (state.cmdkIndex >= items.length) state.cmdkIndex = 0;
+
+        if (items.length === 0) {
+            container.innerHTML = '<div class="table-empty" style="padding: 26px;"><div class="table-empty-text">No matching commands, licenses, or organizations</div></div>';
+            return;
+        }
+
+        let lastSection = '';
+        container.innerHTML = items.map((item, idx) => {
+            const heading = item.section !== lastSection
+                ? `<div class="cmdk-section-label">${escapeHtml(item.section)}</div>`
+                : '';
+            lastSection = item.section;
+            return `${heading}<button type="button" class="cmdk-item ${idx === state.cmdkIndex ? 'selected' : ''}" data-cmdk-idx="${idx}"><span>${escapeHtml(item.label)}</span><span class="cmdk-item-meta">${escapeHtml(item.meta)}</span></button>`;
+        }).join('');
+
+        container.querySelectorAll('.cmdk-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = Number(btn.getAttribute('data-cmdk-idx'));
+                executeCommandItem(idx);
+            });
+        });
+    }
+
+    function executeCommandItem(idx) {
+        const item = state.cmdkItems?.[idx];
+        if (!item) return;
+        closeModals();
+        item.action();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -3162,6 +4449,58 @@
             }
         });
 
+        // Mobile Sidebar Drawer Toggle & Backdrop
+        const btnMobileMenu = document.getElementById('btn-mobile-menu');
+        if (btnMobileMenu) btnMobileMenu.addEventListener('click', () => toggleMobileSidebar());
+        const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+        if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', () => toggleMobileSidebar(false));
+
+        // Command Palette Trigger & Search Input
+        const btnOpenCmdk = document.getElementById('btn-open-cmdk');
+        if (btnOpenCmdk) btnOpenCmdk.addEventListener('click', openCommandPalette);
+        const cmdkInput = document.getElementById('cmdk-input');
+        if (cmdkInput) {
+            cmdkInput.addEventListener('input', (e) => {
+                state.cmdkIndex = 0;
+                renderCommandPalette(e.target.value);
+            });
+            cmdkInput.addEventListener('keydown', (e) => {
+                if (!state.cmdkItems || state.cmdkItems.length === 0) return;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    state.cmdkIndex = (state.cmdkIndex + 1) % state.cmdkItems.length;
+                    renderCommandPalette(cmdkInput.value);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    state.cmdkIndex = (state.cmdkIndex - 1 + state.cmdkItems.length) % state.cmdkItems.length;
+                    renderCommandPalette(cmdkInput.value);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    executeCommandItem(state.cmdkIndex);
+                }
+            });
+        }
+
+        // Topbar Auto-Refresh Interval
+        const autoRefreshSelect = document.getElementById('auto-refresh-select');
+        if (autoRefreshSelect) {
+            autoRefreshSelect.addEventListener('change', (e) => setAutoRefresh(e.target.value));
+        }
+
+        // Dashboard Range Switcher & Distribution Tabs
+        document.querySelectorAll('#dash-range-switcher .range-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                loadAnalytics(btn.getAttribute('data-range') || '24h');
+            });
+        });
+
+        document.querySelectorAll('#dash-dist-tabs .mini-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                state.distTab = btn.getAttribute('data-dist') || 'platforms';
+                renderAnalyticsDistribution();
+            });
+        });
+
         // Dismiss Modals When Clicking on Modal Backdrop (Blank Space)
         document.addEventListener('click', (e) => {
             if (e.target && e.target.classList && e.target.classList.contains('modal-overlay')) {
@@ -3169,33 +4508,51 @@
             }
         });
 
-        // Filter Pills
-        document.querySelectorAll('.filter-pill').forEach(btn => {
+        // License Filter Pills & Sort
+        document.querySelectorAll('#pane-licenses .filter-pill[data-filter]').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('#pane-licenses .filter-pill[data-filter]').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 state.filterStatus = btn.getAttribute('data-filter') || 'all';
-                const selectFilter = document.getElementById('license-status-filter');
-                if (selectFilter) selectFilter.value = state.filterStatus;
                 renderLicensesTable();
             });
         });
 
-        // Status Dropdown Filter
-        const licenseStatusFilter = document.getElementById('license-status-filter');
-        if (licenseStatusFilter) {
-            licenseStatusFilter.addEventListener('change', (e) => {
-                state.filterStatus = e.target.value;
-                document.querySelectorAll('.filter-pill').forEach(b => {
-                    if (b.getAttribute('data-filter') === state.filterStatus) {
-                        b.classList.add('active');
-                    } else {
-                        b.classList.remove('active');
-                    }
-                });
+        const licenseSortSelect = document.getElementById('license-sort-select');
+        if (licenseSortSelect) {
+            licenseSortSelect.addEventListener('change', (e) => {
+                state.licenseSort = e.target.value;
                 renderLicensesTable();
             });
         }
+
+        // Device Filter Pills & Platform Select
+        document.querySelectorAll('.device-filter-pill[data-device-filter]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.device-filter-pill[data-device-filter]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                state.deviceFilter = btn.getAttribute('data-device-filter') || 'all';
+                renderGlobalDevicesTable();
+            });
+        });
+
+        const devicesPlatformFilter = document.getElementById('devices-platform-filter');
+        if (devicesPlatformFilter) {
+            devicesPlatformFilter.addEventListener('change', (e) => {
+                state.devicePlatformFilter = e.target.value;
+                renderGlobalDevicesTable();
+            });
+        }
+
+        // Client Filter Pills
+        document.querySelectorAll('.client-filter-pill[data-client-filter]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.client-filter-pill[data-client-filter]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                state.clientFilter = btn.getAttribute('data-client-filter') || 'all';
+                renderClientsTable();
+            });
+        });
 
         // License Search Field
         const searchInput = document.getElementById('license-search-input');
@@ -3215,30 +4572,51 @@
             });
         }
 
-        // Global Keyboard Shortcut: '/' to focus search, 1-6 for tabs, Escape for modals
+        // Global Keyboard Shortcuts (Escape, Ctrl/Cmd+K outside email editors, '/' search, 1-8 tabs)
         document.addEventListener('keydown', (e) => {
+            const active = document.activeElement;
+            const inEditorCanvas = Boolean(active && active.closest && active.closest('.gmail-canvas'));
+            const isTypingField = Boolean(active && (
+                active.tagName === 'INPUT' ||
+                active.tagName === 'TEXTAREA' ||
+                active.tagName === 'SELECT' ||
+                active.isContentEditable
+            ));
+
             if (e.key === 'Escape') {
                 closeModals();
-            } else if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                return;
+            }
+
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                if (!inEditorCanvas && getAuthToken()) {
+                    e.preventDefault();
+                    openCommandPalette();
+                }
+                return;
+            }
+
+            if (isTypingField) return;
+
+            if (e.key === '/') {
                 e.preventDefault();
                 const search = document.getElementById('license-search-input');
                 if (search) search.focus();
-            } else if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-                if (e.key === '1') switchTab('dashboard');
-                if (e.key === '2') switchTab('licenses');
-                if (e.key === '3') switchTab('devices');
-                if (e.key === '4') switchTab('telemetry');
-                if (e.key === '5') switchTab('clients');
-                if (e.key === '6') switchTab('broadcasts');
-                if (e.key === '7') switchTab('support-mail');
-            }
+            } else if (e.key === '1') switchTab('dashboard');
+            else if (e.key === '2') switchTab('licenses');
+            else if (e.key === '3') switchTab('devices');
+            else if (e.key === '4') switchTab('clients');
+            else if (e.key === '5') switchTab('telemetry');
+            else if (e.key === '6') switchTab('broadcasts');
+            else if (e.key === '7') switchTab('support-mail');
+            else if (e.key === '8') switchTab('admins');
         });
 
         // Refresh Button
         const btnRefresh = document.getElementById('btn-refresh');
         if (btnRefresh) {
             btnRefresh.addEventListener('click', async () => {
-                await Promise.all([loadLicenses(), loadClients(), loadGlobalDevices(), loadLogs()]);
+                await Promise.all([loadLicenses(), loadClients(), loadGlobalDevices(), loadLogs(), loadAnalytics(), checkSystemHealth(false)]);
                 showToast('Workspace data refreshed', 'info');
             });
         }
@@ -3248,7 +4626,35 @@
 
         // Open Issue Modal
         const btnOpenIssue = document.getElementById('btn-open-issue');
-        if (btnOpenIssue) btnOpenIssue.addEventListener('click', openIssueModal);
+        if (btnOpenIssue) btnOpenIssue.addEventListener('click', () => openIssueModal());
+
+        // Issued License Reveal Modal Actions
+        const btnCopyIssued = document.getElementById('btn-copy-issued-key');
+        if (btnCopyIssued) {
+            btnCopyIssued.addEventListener('click', () => {
+                if (state.lastIssuedLicense?.license_key) {
+                    copyKey(state.lastIssuedLicense.license_key, btnCopyIssued);
+                }
+            });
+        }
+
+        const btnEmailIssued = document.getElementById('btn-email-issued-key');
+        if (btnEmailIssued) {
+            btnEmailIssued.addEventListener('click', () => {
+                const issued = state.lastIssuedLicense;
+                closeModals();
+                switchTab('support-mail');
+                if (!issued) return;
+                const toInput = document.getElementById('supp-to-input');
+                const subjInput = document.getElementById('supp-subject-input');
+                const editor = document.getElementById('supp-editor-canvas');
+                if (toInput && issued.email) toInput.value = issued.email;
+                if (subjInput) subjInput.value = `Your CortexCo License Key (${issued.org_name || 'Organization'})`;
+                if (editor) {
+                    editor.innerHTML = `<p>Hello ${escapeHtml(issued.contact_name || issued.org_name || 'Team')},</p><p>Your CortexCo cryptographic license key has been provisioned:</p><p><strong style="font-family: monospace; font-size: 15px;">${escapeHtml(issued.license_key)}</strong></p><p>Seats Allocated: ${Number(issued.max_machines || 1)} machine(s)<br>Validity: ${Number(issued.validity_days || 365)} days</p><p>Keep this key secure. Reach out if you need additional hardware seats.</p>`;
+                }
+            });
+        }
 
         // Open Add Client Modal
         const btnOpenAddClient = document.getElementById('btn-open-add-client');
@@ -3259,7 +4665,7 @@
             });
         }
 
-        // Form: Issue License
+        // Form: Issue License (sends validity_days matching backend LicenseController.create)
         const formIssue = document.getElementById('form-issue-license');
         if (formIssue) {
             formIssue.addEventListener('submit', async (e) => {
@@ -3274,27 +4680,36 @@
                     return;
                 }
 
-                let expiryDate;
-                if (durationPreset === 'perpetual') {
-                    expiryDate = new Date();
-                    expiryDate.setFullYear(expiryDate.getFullYear() + 10);
-                } else {
-                    const days = parseInt(durationPreset, 10) || 365;
-                    expiryDate = new Date();
-                    expiryDate.setDate(expiryDate.getDate() + days);
-                }
+                const validityDays = durationPreset === 'perpetual' ? 3650 : (parseInt(durationPreset, 10) || 365);
 
                 const res = await apiRequest('/api/license', 'POST', {
                     client_id: clientId,
                     max_machines: maxMachines,
-                    expiry_date: expiryDate.toISOString(),
+                    validity_days: validityDays,
                     notes
                 });
 
-                if (res.success) {
-                    showToast('Cryptographic license issued', 'success');
+                if (res.success && res.data) {
+                    const client = state.clients.find(c => String(c.id) === String(clientId));
+                    state.lastIssuedLicense = {
+                        ...res.data,
+                        org_name: client?.org_name || 'Organization',
+                        email: client?.email || '',
+                        contact_name: client?.contact_name || '',
+                        validity_days: validityDays
+                    };
                     closeModals();
-                    await loadLicenses();
+                    formIssue.reset();
+                    await Promise.all([loadLicenses(), loadClients(), loadAnalytics()]);
+
+                    const issuedModal = document.getElementById('modal-license-issued');
+                    const orgEl = document.getElementById('issued-modal-org');
+                    const keyEl = document.getElementById('issued-modal-key');
+                    const metaEl = document.getElementById('issued-modal-meta');
+                    if (orgEl) orgEl.textContent = state.lastIssuedLicense.org_name;
+                    if (keyEl) keyEl.textContent = res.data.license_key || '---';
+                    if (metaEl) metaEl.textContent = `Max Seats: ${maxMachines} machine(s) • Validity: ${validityDays} days`;
+                    if (issuedModal) issuedModal.classList.add('open');
                 } else {
                     showToast(res.message || 'Failed to issue license', 'error');
                 }
@@ -3325,6 +4740,7 @@
                     closeModals();
                     await loadLicenses();
                     loadGlobalDevices();
+                    loadAnalytics();
                 } else {
                     showToast(res.message || 'Failed to update license', 'error');
                 }
@@ -3359,6 +4775,7 @@
                     closeModals();
                     formAddClient.reset();
                     await loadClients();
+                    loadAnalytics();
                 } else {
                     showToast(res.message || 'Failed to register client', 'error');
                 }
@@ -3390,9 +4807,58 @@
             });
         }
 
+        // Form: Add / Edit Administrator
+        const formAdminUser = document.getElementById('form-admin-user');
+        if (formAdminUser) {
+            formAdminUser.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const adminId = document.getElementById('admin-form-id')?.value;
+                const name = document.getElementById('admin-form-name')?.value.trim();
+                const email = document.getElementById('admin-form-email')?.value.trim();
+                const role = document.getElementById('admin-form-role')?.value || 'admin';
+                const password = document.getElementById('admin-form-password')?.value || '';
+
+                if (!name || !email) {
+                    showToast('Name and email are required', 'error');
+                    return;
+                }
+
+                const submitBtn = document.getElementById('btn-submit-admin-form');
+                if (submitBtn) submitBtn.disabled = true;
+
+                try {
+                    let res;
+                    if (adminId) {
+                        const payload = { name, email, role };
+                        if (password.trim()) payload.password = password;
+                        res = await apiRequest(`/api/admin/${adminId}`, 'PUT', payload);
+                    } else {
+                        if (password.length < 6) {
+                            showToast('Password must be at least 6 characters', 'error');
+                            return;
+                        }
+                        res = await apiRequest('/api/admin', 'POST', { name, email, role, password });
+                    }
+
+                    if (res.success) {
+                        showToast(adminId ? 'Administrator updated' : 'Administrator created', 'success');
+                        closeModals();
+                        await loadAdminsTab();
+                    } else {
+                        showToast(res.message || 'Failed to save administrator', 'error');
+                    }
+                } finally {
+                    if (submitBtn) submitBtn.disabled = false;
+                }
+            });
+        }
+
         // Telemetry Logs Refresh & Filter
         const btnRefreshLogs = document.getElementById('btn-refresh-logs');
         if (btnRefreshLogs) btnRefreshLogs.addEventListener('click', loadLogs);
+
+        const logActionFilter = document.getElementById('log-action-filter');
+        if (logActionFilter) logActionFilter.addEventListener('change', loadLogs);
 
         const logStatusFilter = document.getElementById('log-status-filter');
         if (logStatusFilter) logStatusFilter.addEventListener('change', renderLogsTable);
@@ -3400,10 +4866,7 @@
         const logSearchInput = document.getElementById('log-search-input');
         if (logSearchInput) logSearchInput.addEventListener('input', renderLogsTable);
 
-        // Client Search & Filter
-        const clientStatusFilter = document.getElementById('client-status-filter');
-        if (clientStatusFilter) clientStatusFilter.addEventListener('change', renderClientsTable);
-
+        // Client Search
         const clientSearchInput = document.getElementById('client-search-input');
         if (clientSearchInput) clientSearchInput.addEventListener('input', renderClientsTable);
 
@@ -3680,6 +5143,8 @@
             loadClients(),
             loadGlobalDevices(),
             loadLogs(),
+            loadAnalytics(),
+            checkSystemHealth(false),
             checkResendStatus()
         ]);
     }
@@ -3688,9 +5153,13 @@
     window.app = {
         switchTab,
         closeModals,
+        closeConfirmModal,
         copyKey,
         openIssueModal,
+        openIssueModalForClient,
         openEditLicenseModal,
+        extendLicenseDays,
+        deleteLicense,
         openHwidModal,
         toggleHwidBlock,
         removeHwid,
@@ -3698,10 +5167,23 @@
         addManualHwid,
         updateLicenseStatus,
         inspectLogPayload,
+        openPayloadInspector,
+        toggleTelemetryTail,
+        exportTelemetryCsv,
+        exportLicensesCsv,
         openEditClientModal,
+        openClientDetailModal,
+        toggleClientStatus,
+        deleteClient,
+        loadAdminsTab,
+        openAdminModal,
+        editAdminUser,
+        deleteAdminUser,
+        checkSystemHealth,
         logout: handleLogout,
         checkAuthSession,
         handleLoginSubmit,
+        toggleLoginPassword,
 
         // Gmail Suite Formatting & Compose
         applyFontFamily,
@@ -3740,6 +5222,7 @@
         submitBroadcast,
         loadBroadcasts,
         sendDraftBroadcast,
+        syncClientsToAudience,
         deleteContact,
         handleCsvSelected,
         downloadSampleCsv,
@@ -3748,6 +5231,8 @@
 
         // Resend Support 1-to-1 Mail API
         switchSupportSubTab,
+        pickSupportClientRecipient,
+        applySupportTemplate,
         handleFileSelect,
         removeAttachedFile,
         clearSupportComposer,

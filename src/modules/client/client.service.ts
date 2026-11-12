@@ -1,5 +1,7 @@
 import { ClientModel } from './client.model.js';
 import { LicenseModel } from '../license/license.model.js';
+import pool from '../../config/db.config.js';
+import { RowDataPacket } from 'mysql2';
 
 export const ClientService = {
     async createClient(data: { org_name: string; contact_name: string; email: string; phone?: string; status?: 'active' | 'inactive' | 'suspended' }) {
@@ -25,7 +27,18 @@ export const ClientService = {
             throw new Error(`Client with ID ${id} not found`);
         }
         const licenses = await LicenseModel.findByClientId(id);
-        return { ...client, licenses };
+        let connectors: any[] = [];
+        try {
+            const [rows] = await pool.query<RowDataPacket[]>(
+                `SELECT id, license_key, provider, status, account_name, account_email, account_id, webhook_url, connected_at, updated_at
+                 FROM client_connectors WHERE client_id = ? ORDER BY updated_at DESC`,
+                [id]
+            );
+            connectors = rows;
+        } catch {
+            connectors = [];
+        }
+        return { ...client, licenses, connectors };
     },
 
     async updateClient(id: string, data: Partial<ClientModel>) {

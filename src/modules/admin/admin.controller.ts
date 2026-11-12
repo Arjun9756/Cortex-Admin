@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { AdminService } from './admin.service.js';
+import { adminAuthRateLimiter } from '../../middleware/rateLimit.middleware.js';
 
 export const AdminController = {
     async login(req: Request, res: Response) {
@@ -20,6 +21,22 @@ export const AdminController = {
             res.status(200).json({
                 success: true,
                 admin: req.admin
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    },
+
+    async getSecurityStatus(req: Request, res: Response) {
+        try {
+            res.status(200).json({
+                success: true,
+                data: {
+                    authRateLimit: adminAuthRateLimiter.getStats(),
+                    tokenAlgorithm: 'HMAC-SHA256',
+                    environment: process.env.VERCEL ? 'vercel-serverless' : 'standalone',
+                    uptimeSeconds: Math.floor(process.uptime())
+                }
             });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
