@@ -21,6 +21,10 @@ export const ClientService = {
         return await ClientModel.findAll();
     },
 
+    async getPaginatedClients(options: { page?: number | undefined; limit?: number | undefined; status?: string | undefined; search?: string | undefined }) {
+        return await ClientModel.findPaginated(options);
+    },
+
     async getClientById(id: string) {
         const client = await ClientModel.findById(id);
         if (!client) {

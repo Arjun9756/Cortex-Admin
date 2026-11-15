@@ -49,6 +49,26 @@
         lastIssuedLicense: null,
         lastSimResponse: null,
 
+        // High-Performance Data Grids Pagination
+        telemetryPage: 1,
+        telemetryLimit: 50,
+        telemetryTotal: 0,
+        telemetryTotalPages: 1,
+        telemetryStatusFilter: 'all',
+        telemetrySearchQuery: '',
+        licensesPage: 1,
+        licensesLimit: 25,
+        devicesPage: 1,
+        devicesLimit: 25,
+        clientsPage: 1,
+        clientsLimit: 25,
+        contactsPage: 1,
+        contactsLimit: 25,
+        broadcastsPage: 1,
+        broadcastsLimit: 25,
+        trackerPage: 1,
+        trackerLimit: 25,
+
         // Resend Email Integration State (Zero-DB Persistence)
         resendConfig: { configured: false, valid: false },
         audiences: [],
@@ -962,10 +982,10 @@
             return `
                 <div class="watchlist-row">
                     <div class="watchlist-row-main">
-                        <span class="watchlist-row-title clickable-org" onclick="window.app.openClientDetailModal(${Number(l.client_id)})">${escapeHtml(l.org_name || 'Organization')}</span>
+                        <span class="watchlist-row-title clickable-org" onclick="window.app.openClientDetailModal('${escapeHtml(String(l.client_id || ''))}')">${escapeHtml(l.org_name || 'Organization')}</span>
                         <span class="watchlist-row-sub">${escapeHtml(l.license_key)} · ${daysLeft}d remaining</span>
                     </div>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.extendLicenseDays(${Number(l.id)}, 30)">+30d</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.openExtendModal('${escapeHtml(String(l.id || ''))}')" title="Extend License Validity">+Days</button>
                 </div>
             `;
         }).join('');
@@ -994,7 +1014,7 @@
             return `
                 <div class="watchlist-row">
                     <div class="watchlist-row-main">
-                        <span class="watchlist-row-title clickable-org" onclick="window.app.openClientDetailModal(${Number(c.id)})">${escapeHtml(c.org_name)}</span>
+                        <span class="watchlist-row-title clickable-org" onclick="window.app.openClientDetailModal('${escapeHtml(String(c.id || ''))}')">${escapeHtml(c.org_name)}</span>
                         <span class="watchlist-row-sub">${escapeHtml(c.email || 'No email')} · ${activeCount}/${totalCount} active keys</span>
                     </div>
                     <span class="status-pill ${escapeHtml(st)}" style="font-size: 10.5px;">
@@ -1119,9 +1139,32 @@
         if (navCounter) navCounter.textContent = active;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHARED HIGH-PERFORMANCE PAGINATION HELPER
+    // ─────────────────────────────────────────────────────────────────────────
+    function updatePaginationControls({ prefix, page, limit, total, unitLabel = 'items' }) {
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+        const safePage = Math.min(Math.max(1, page), totalPages);
+        const start = total === 0 ? 0 : (safePage - 1) * limit + 1;
+        const end = Math.min(total, safePage * limit);
+
+        const infoEl = document.getElementById(`${prefix}-pagination-info`);
+        const indicatorEl = document.getElementById(`${prefix}-page-indicator`);
+        const btnPrev = document.getElementById(`${prefix}-page-prev`);
+        const btnNext = document.getElementById(`${prefix}-page-next`);
+        const sizeSelect = document.getElementById(`${prefix}-page-size`);
+
+        if (infoEl) infoEl.textContent = `Showing ${start}–${end} of ${total} ${unitLabel}`;
+        if (indicatorEl) indicatorEl.textContent = `Page ${safePage} of ${totalPages}`;
+        if (btnPrev) btnPrev.disabled = safePage <= 1;
+        if (btnNext) btnNext.disabled = safePage >= totalPages;
+        if (sizeSelect && sizeSelect.value !== String(limit)) sizeSelect.value = String(limit);
+
+        return { safePage, totalPages, start, end };
+    }
+
     function renderLicensesTable() {
         const tbody = document.getElementById('licenses-table-body');
-        const footer = document.getElementById('licenses-table-footer');
         if (!tbody) return;
 
         let filtered = [...state.licenses];
@@ -1157,14 +1200,20 @@
             if (sortMode === 'org_asc') {
                 return String(a.org_name || '').localeCompare(String(b.org_name || ''));
             }
-            return (parseUTCDate(b.created_at)?.getTime() || Number(b.id || 0)) - (parseUTCDate(a.created_at)?.getTime() || Number(a.id || 0));
+            return (parseUTCDate(b.created_at)?.getTime() || 0) - (parseUTCDate(a.created_at)?.getTime() || 0);
         });
 
-        if (footer) {
-            footer.textContent = `Showing ${filtered.length} of ${state.licenses.length} licenses`;
-        }
+        const total = filtered.length;
+        const { safePage } = updatePaginationControls({
+            prefix: 'licenses',
+            page: state.licensesPage,
+            limit: state.licensesLimit,
+            total,
+            unitLabel: 'licenses'
+        });
+        state.licensesPage = safePage;
 
-        if (filtered.length === 0) {
+        if (total === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="7">
@@ -1178,7 +1227,9 @@
             return;
         }
 
-        tbody.innerHTML = filtered.map(l => {
+        const paged = filtered.slice((safePage - 1) * state.licensesLimit, safePage * state.licensesLimit);
+
+        tbody.innerHTML = paged.map(l => {
             const hwids = Array.isArray(l.hwids) ? l.hwids : [];
             const boundCount = Number(l.bound_machines_count !== undefined ? l.bound_machines_count : hwids.length);
             const blockedCount = Number(l.blocked_machines_count || 0);
@@ -1204,7 +1255,7 @@
                 <tr id="row-license-${l.id}">
                     <td>
                         <div class="cell-client">
-                            <span class="client-org-name clickable-org" onclick="window.app.openClientDetailModal(${Number(l.client_id)})" title="Inspect organization overview">${escapeHtml(l.org_name || 'Individual')}</span>
+                            <span class="client-org-name clickable-org" onclick="window.app.openClientDetailModal('${escapeHtml(String(l.client_id || ''))}')" title="Inspect organization overview">${escapeHtml(l.org_name || 'Individual')}</span>
                             <span class="client-subtext">${escapeHtml(l.email || l.contact_name || 'No email')}</span>
                         </div>
                     </td>
@@ -1226,7 +1277,7 @@
                         <div class="hwid-quota-cell">
                             <div class="hwid-slots">${slotsHtml}</div>
                             <span class="hwid-quota-text">${boundCount}/${maxMachines}</span>
-                            <button class="hwid-trigger-btn" onclick="window.app.openHwidModal('${l.id}')">
+                            <button class="hwid-trigger-btn" onclick="window.app.openHwidModal('${escapeHtml(String(l.id || ''))}')">
                                 Manage HWIDs
                             </button>
                         </div>
@@ -1245,23 +1296,23 @@
                     </td>
                     <td class="align-right">
                         <div class="row-actions">
-                            <button class="btn btn-secondary btn-sm" onclick="window.app.extendLicenseDays(${Number(l.id)}, 30)" title="Extend expiration by 30 days">+30d</button>
-                            <button class="btn btn-secondary btn-sm" onclick="window.app.openEditLicenseModal('${l.id}')" title="Edit Parameters">
+                            <button class="btn btn-secondary btn-sm" onclick="window.app.openExtendModal('${escapeHtml(String(l.id || ''))}')" title="Extend validity period by custom days">+Days</button>
+                            <button class="btn btn-secondary btn-sm" onclick="window.app.openEditLicenseModal('${escapeHtml(String(l.id || ''))}')" title="Edit Parameters">
                                 Edit
                             </button>
                             ${l.status === 'active' ? `
-                                <button class="btn btn-secondary btn-sm" onclick="window.app.updateLicenseStatus('${l.id}', 'suspended')" title="Suspend Access">
+                                <button class="btn btn-secondary btn-sm" onclick="window.app.updateLicenseStatus('${escapeHtml(String(l.id || ''))}', 'suspended')" title="Suspend Access">
                                     Suspend
                                 </button>
-                                <button class="btn btn-danger btn-sm" onclick="window.app.updateLicenseStatus('${l.id}', 'revoked')" title="Instant Remote Kill-Switch">
+                                <button class="btn btn-danger btn-sm" onclick="window.app.updateLicenseStatus('${escapeHtml(String(l.id || ''))}', 'revoked')" title="Instant Remote Kill-Switch">
                                     Revoke
                                 </button>
                             ` : `
-                                <button class="btn btn-primary btn-sm" onclick="window.app.updateLicenseStatus('${l.id}', 'active')" title="Re-authorize">
+                                <button class="btn btn-primary btn-sm" onclick="window.app.updateLicenseStatus('${escapeHtml(String(l.id || ''))}', 'active')" title="Re-authorize">
                                     Activate
                                 </button>
                             `}
-                            <button class="btn btn-danger btn-sm" onclick="window.app.deleteLicense(${Number(l.id)})" title="Delete License Permanently">
+                            <button class="btn btn-danger btn-sm" onclick="window.app.deleteLicense('${escapeHtml(String(l.id || ''))}')" title="Delete License Permanently">
                                 Delete
                             </button>
                         </div>
@@ -1269,6 +1320,24 @@
                 </tr>
             `;
         }).join('');
+    }
+
+    function prevLicensesPage() {
+        if (state.licensesPage > 1) {
+            state.licensesPage--;
+            renderLicensesTable();
+        }
+    }
+
+    function nextLicensesPage() {
+        state.licensesPage++;
+        renderLicensesTable();
+    }
+
+    function changeLicensesPageSize(sz) {
+        state.licensesLimit = Math.max(10, Number(sz) || 25);
+        state.licensesPage = 1;
+        renderLicensesTable();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1369,11 +1438,21 @@
             });
         }
 
+        const total = filtered.length;
+        const { safePage } = updatePaginationControls({
+            prefix: 'devices',
+            page: state.devicesPage,
+            limit: state.devicesLimit,
+            total,
+            unitLabel: 'hardware devices'
+        });
+        state.devicesPage = safePage;
+
         if (footer) {
             footer.textContent = `Showing ${filtered.length} of ${state.globalDevices.length} hardware devices`;
         }
 
-        if (filtered.length === 0) {
+        if (total === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8">
@@ -1386,7 +1465,9 @@
             return;
         }
 
-        tbody.innerHTML = filtered.map(d => {
+        const paged = filtered.slice((safePage - 1) * state.devicesLimit, safePage * state.devicesLimit);
+
+        tbody.innerHTML = paged.map(d => {
             const isBlocked = isDeviceBlocked(d);
             const platRaw = (d.platform || '').toLowerCase();
             const platformName = platRaw.includes('linux') ? 'Linux' : (platRaw.includes('darwin') || platRaw.includes('mac') ? 'macOS' : platRaw.includes('manual') ? 'Manual' : 'Windows');
@@ -1434,6 +1515,42 @@
                 </tr>
             `;
         }).join('');
+    }
+
+    function prevLicensesPage() {
+        if (state.licensesPage > 1) {
+            state.licensesPage--;
+            renderLicensesTable();
+        }
+    }
+
+    function nextLicensesPage() {
+        state.licensesPage++;
+        renderLicensesTable();
+    }
+
+    function changeLicensesPageSize(sz) {
+        state.licensesLimit = Math.max(10, Number(sz) || 25);
+        state.licensesPage = 1;
+        renderLicensesTable();
+    }
+
+    function prevDevicesPage() {
+        if (state.devicesPage > 1) {
+            state.devicesPage--;
+            renderGlobalDevicesTable();
+        }
+    }
+
+    function nextDevicesPage() {
+        state.devicesPage++;
+        renderGlobalDevicesTable();
+    }
+
+    function changeDevicesPageSize(sz) {
+        state.devicesLimit = Math.max(10, Number(sz) || 25);
+        state.devicesPage = 1;
+        renderGlobalDevicesTable();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1645,16 +1762,17 @@
     }
 
     async function extendLicenseDays(licenseId, daysToAdd) {
-        const license = state.licenses.find(l => Number(l.id) === Number(licenseId));
+        const license = state.licenses.find(l => String(l.id) === String(licenseId));
         if (!license) return;
+        const days = Math.max(1, Number(daysToAdd || 30));
         const baseTime = Math.max(Date.now(), parseUTCDate(license.expiry_date)?.getTime() || Date.now());
-        const nextExpiry = new Date(baseTime + Number(daysToAdd || 30) * 86400000);
+        const nextExpiry = new Date(baseTime + days * 86400000);
         const res = await apiRequest(`/api/license/${licenseId}`, 'PUT', {
             expiry_date: nextExpiry.toISOString(),
             status: license.status === 'expired' ? 'active' : license.status
         });
         if (res.success) {
-            showToast(`Extended license ${license.license_key} by +${daysToAdd} days`, 'success');
+            showToast(`Extended license ${license.license_key} by +${days} days`, 'success');
             await loadLicenses();
             loadAnalytics();
         } else {
@@ -1662,8 +1780,94 @@
         }
     }
 
+    function openExtendModal(licenseId) {
+        const license = state.licenses.find(l => String(l.id) === String(licenseId));
+        if (!license) return;
+
+        state.currentExtendLicense = license;
+        const modal = document.getElementById('modal-extend-license');
+        const idInput = document.getElementById('extend-license-id');
+        const orgLabel = document.getElementById('extend-modal-org');
+        const keyLabel = document.getElementById('extend-modal-key');
+        const statusLabel = document.getElementById('extend-modal-status');
+        const currExpiryLabel = document.getElementById('extend-modal-current-expiry');
+        const daysInput = document.getElementById('extend-days-input');
+
+        if (idInput) idInput.value = license.id;
+        if (orgLabel) orgLabel.textContent = license.org_name || 'Individual';
+        if (keyLabel) keyLabel.textContent = license.license_key;
+        if (statusLabel) {
+            statusLabel.textContent = (license.status || 'active').toUpperCase();
+            statusLabel.className = `status-pill ${license.status === 'active' ? 'active' : 'revoked'}`;
+        }
+        if (currExpiryLabel) {
+            const expDate = parseUTCDate(license.expiry_date);
+            currExpiryLabel.textContent = expDate
+                ? `${formatDate(license.expiry_date)} (${isLicenseExpired(license) ? 'Expired' : 'Active'})`
+                : 'No Expiry Set';
+        }
+        if (daysInput) daysInput.value = '30';
+
+        updateExtendPreview();
+        if (modal) modal.classList.add('open');
+    }
+
+    function setExtendDays(days) {
+        const input = document.getElementById('extend-days-input');
+        if (input) {
+            input.value = String(days);
+            updateExtendPreview();
+        }
+    }
+
+    function updateExtendPreview() {
+        const license = state.currentExtendLicense;
+        if (!license) return;
+
+        const days = Math.max(1, parseInt(document.getElementById('extend-days-input')?.value, 10) || 30);
+        const baseTime = Math.max(Date.now(), parseUTCDate(license.expiry_date)?.getTime() || Date.now());
+        const targetTime = new Date(baseTime + days * 86400000);
+
+        const previewDate = document.getElementById('extend-modal-preview-date');
+        const previewDelta = document.getElementById('extend-modal-preview-delta');
+
+        if (previewDate) previewDate.textContent = formatDate(targetTime.toISOString());
+        if (previewDelta) previewDelta.textContent = `+${days} days added`;
+    }
+
+    async function submitExtendLicense(e) {
+        if (e) e.preventDefault();
+        const license = state.currentExtendLicense;
+        if (!license) return;
+
+        const days = Math.max(1, parseInt(document.getElementById('extend-days-input')?.value, 10) || 30);
+        const submitBtn = document.getElementById('btn-submit-extend');
+        if (submitBtn) submitBtn.disabled = true;
+
+        try {
+            await extendLicenseDays(license.id, days);
+            closeModals();
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    }
+
+    function quickAddDaysToEditForm(daysToAdd) {
+        const input = document.getElementById('edit-expiry-date');
+        if (!input) return;
+
+        let currentVal = input.value;
+        let baseDate = currentVal ? new Date(currentVal) : new Date();
+        if (isNaN(baseDate.getTime())) baseDate = new Date();
+
+        const newDate = new Date(baseDate.getTime() + Number(daysToAdd || 30) * 86400000);
+        const tzOffset = newDate.getTimezoneOffset() * 60000;
+        input.value = (new Date(newDate.getTime() - tzOffset)).toISOString().slice(0, 16);
+        showToast(`Adjusted expiry timestamp by +${daysToAdd} days`, 'info');
+    }
+
     async function deleteLicense(licenseId) {
-        const license = state.licenses.find(l => Number(l.id) === Number(licenseId));
+        const license = state.licenses.find(l => String(l.id) === String(licenseId));
         const label = license ? license.license_key : `#${licenseId}`;
         const ok = await showConfirmModal(
             'Delete License Permanently',
@@ -1722,33 +1926,80 @@
     // ─────────────────────────────────────────────────────────────────────────
     // TELEMETRY & AUDIT STREAM
     // ─────────────────────────────────────────────────────────────────────────
-    async function loadLogs() {
+    async function loadLogs(targetPage) {
         const tbody = document.getElementById('logs-table-body');
         if (!tbody) return;
 
-        const actionFilter = document.getElementById('log-action-filter')?.value || state.telemetryActionFilter || 'all';
-        state.telemetryActionFilter = actionFilter;
-        const url = actionFilter && actionFilter !== 'all'
-            ? `/api/analytics/logs?limit=200&action_type=${encodeURIComponent(actionFilter)}`
-            : '/api/analytics/logs?limit=200';
+        if (targetPage !== undefined) {
+            state.telemetryPage = Math.max(1, Number(targetPage) || 1);
+        }
 
-        const res = await apiRequest(url);
+        const actionFilter = document.getElementById('log-action-filter')?.value || state.telemetryActionFilter || 'all';
+        const statusFilter = document.getElementById('log-status-filter')?.value || state.telemetryStatusFilter || 'all';
+        const searchInput = (document.getElementById('log-search-input')?.value || state.telemetrySearchQuery || '').trim();
+
+        state.telemetryActionFilter = actionFilter;
+        state.telemetryStatusFilter = statusFilter;
+        state.telemetrySearchQuery = searchInput;
+
+        const params = new URLSearchParams();
+        params.set('page', String(state.telemetryPage));
+        params.set('limit', String(state.telemetryLimit));
+        if (actionFilter && actionFilter !== 'all') params.set('action_type', actionFilter);
+        if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter);
+        if (searchInput) params.set('search', searchInput);
+
+        const res = await apiRequest(`/api/analytics/logs?${params.toString()}`);
         if (res.success && Array.isArray(res.data)) {
             state.logs = res.data;
+            if (res.pagination) {
+                state.telemetryTotal = res.pagination.total;
+                state.telemetryTotalPages = res.pagination.totalPages;
+            } else {
+                state.telemetryTotal = res.data.length;
+                state.telemetryTotalPages = Math.max(1, Math.ceil(res.data.length / state.telemetryLimit));
+            }
             renderLogsTable();
             renderDashboardRecentLogs();
         }
     }
 
+    function prevTelemetryPage() {
+        if (state.telemetryPage > 1) {
+            loadLogs(state.telemetryPage - 1);
+        }
+    }
+
+    function nextTelemetryPage() {
+        if (state.telemetryPage < state.telemetryTotalPages) {
+            loadLogs(state.telemetryPage + 1);
+        }
+    }
+
+    function changeTelemetryPageSize(sz) {
+        state.telemetryLimit = Math.max(10, Number(sz) || 50);
+        state.telemetryPage = 1;
+        loadLogs(1);
+    }
+
+    function updateTelemetryTailUI() {
+        const btn = document.getElementById('btn-toggle-live-tail');
+        const label = document.getElementById('telemetry-tail-label');
+        if (btn) btn.classList.toggle('active', state.telemetryTailActive);
+        if (label) {
+            label.textContent = state.telemetryTailActive ? 'Live Tail: Running (10s)' : 'Live Tail: Paused';
+        }
+    }
+
     function toggleTelemetryTail() {
         state.telemetryTailActive = !state.telemetryTailActive;
-        const btn = document.getElementById('btn-toggle-live-tail');
-        if (btn) btn.classList.toggle('active', state.telemetryTailActive);
 
         if (state.telemetryTailTimer) {
             clearInterval(state.telemetryTailTimer);
             state.telemetryTailTimer = null;
         }
+
+        updateTelemetryTailUI();
 
         if (state.telemetryTailActive) {
             loadLogs();
@@ -1804,34 +2055,20 @@
         const countBadge = document.getElementById('count-telemetry-total');
         if (!tbody) return;
 
-        let filtered = state.logs || [];
-        const statusFilter = document.getElementById('log-status-filter')?.value;
-        const actionFilter = document.getElementById('log-action-filter')?.value;
-        const searchInput = document.getElementById('log-search-input')?.value.toLowerCase().trim();
+        const total = state.telemetryTotal !== undefined ? state.telemetryTotal : (state.logs || []).length;
+        const { safePage } = updatePaginationControls({
+            prefix: 'telemetry',
+            page: state.telemetryPage,
+            limit: state.telemetryLimit,
+            total,
+            unitLabel: 'telemetry events'
+        });
+        state.telemetryPage = safePage;
 
-        if (actionFilter && actionFilter !== 'all') {
-            filtered = filtered.filter(l => (l.action_type || l.action || '') === actionFilter);
-        }
+        if (countBadge) countBadge.textContent = `${total} events`;
+        if (footer) footer.textContent = `Showing ${(state.logs || []).length} of ${total} telemetry events`;
 
-        if (statusFilter && statusFilter !== 'all') {
-            filtered = filtered.filter(l => l.status === statusFilter);
-        }
-
-        if (searchInput) {
-            filtered = filtered.filter(l => {
-                const key = (l.license_key || '').toLowerCase();
-                const reason = (getLogReason(l) || '').toLowerCase();
-                const ip = (l.ip_address || '').toLowerCase();
-                const org = (l.org_name || '').toLowerCase();
-                const action = (l.action_type || l.action || '').toLowerCase();
-                return key.includes(searchInput) || reason.includes(searchInput) || ip.includes(searchInput) || org.includes(searchInput) || action.includes(searchInput);
-            });
-        }
-
-        if (countBadge) countBadge.textContent = `${filtered.length} events`;
-        if (footer) footer.textContent = `Showing ${filtered.length} of ${state.logs.length} telemetry events`;
-
-        if (filtered.length === 0) {
+        if (!state.logs || state.logs.length === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8">
@@ -1844,7 +2081,7 @@
             return;
         }
 
-        tbody.innerHTML = filtered.map((log, idx) => {
+        tbody.innerHTML = state.logs.map((log, idx) => {
             const isSuccess = log.status === 'success';
             const logTimestamp = log.created_at || log.timestamp;
             const logAction = log.action_type || log.action || 'ping';
@@ -1979,11 +2216,21 @@
             });
         }
 
+        const total = filtered.length;
+        const { safePage } = updatePaginationControls({
+            prefix: 'clients',
+            page: state.clientsPage,
+            limit: state.clientsLimit,
+            total,
+            unitLabel: 'client organizations'
+        });
+        state.clientsPage = safePage;
+
         if (footer) {
             footer.textContent = `Showing ${filtered.length} of ${state.clients.length} client organizations`;
         }
 
-        if (filtered.length === 0) {
+        if (total === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="8">
@@ -1996,14 +2243,16 @@
             return;
         }
 
-        tbody.innerHTML = filtered.map(c => {
+        const paged = filtered.slice((safePage - 1) * state.clientsLimit, safePage * state.clientsLimit);
+
+        tbody.innerHTML = paged.map(c => {
             const activeLic = Number(c.active_licenses ?? 0);
             const totalLic = Number(c.total_licenses ?? 0);
             const nextStatus = c.status === 'active' ? 'suspended' : 'active';
             return `
             <tr>
                 <td>
-                    <span class="clickable-org" style="font-size: 13px; font-weight: 600;" onclick="window.app.openClientDetailModal(${Number(c.id)})">${escapeHtml(c.org_name)}</span>
+                    <span class="clickable-org" style="font-size: 13px; font-weight: 600;" onclick="window.app.openClientDetailModal('${escapeHtml(String(c.id || ''))}')">${escapeHtml(c.org_name)}</span>
                 </td>
                 <td>
                     <span style="font-size: 12.5px; color: var(--text-primary);">${escapeHtml(c.contact_name)}</span>
@@ -2028,11 +2277,11 @@
                 </td>
                 <td class="align-right">
                     <div class="row-actions">
-                        <button class="btn btn-secondary btn-sm" onclick="window.app.openClientDetailModal(${Number(c.id)})">Inspect</button>
-                        <button class="btn btn-secondary btn-sm" onclick="window.app.openIssueModalForClient(${Number(c.id)})">+ Key</button>
-                        <button class="btn btn-secondary btn-sm" onclick="window.app.openEditClientModal('${c.id}')">Edit</button>
-                        <button class="btn btn-secondary btn-sm" onclick="window.app.toggleClientStatus(${Number(c.id)}, '${nextStatus}')">${c.status === 'active' ? 'Suspend' : 'Activate'}</button>
-                        <button class="btn btn-danger btn-sm" onclick="window.app.deleteClient(${Number(c.id)})">Delete</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.openClientDetailModal('${escapeHtml(String(c.id || ''))}')">Inspect</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.openIssueModalForClient('${escapeHtml(String(c.id || ''))}')">+ Key</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.openEditClientModal('${escapeHtml(String(c.id || ''))}')">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.toggleClientStatus('${escapeHtml(String(c.id || ''))}', '${nextStatus}')">${c.status === 'active' ? 'Suspend' : 'Activate'}</button>
+                        <button class="btn btn-danger btn-sm" onclick="window.app.deleteClient('${escapeHtml(String(c.id || ''))}')">Delete</button>
                     </div>
                 </td>
             </tr>
@@ -2040,8 +2289,36 @@
         }).join('');
     }
 
+    function prevClientsPage() {
+        if (state.clientsPage > 1) {
+            state.clientsPage--;
+            renderClientsTable();
+        }
+    }
+
+    function nextClientsPage() {
+        state.clientsPage++;
+        renderClientsTable();
+    }
+
+    function changeClientsPageSize(sz) {
+        state.clientsLimit = Math.max(10, Number(sz) || 25);
+        state.clientsPage = 1;
+        renderClientsTable();
+    }
+
     async function openClientDetailModal(clientId) {
         if (!clientId) return;
+        let idStr = String(clientId).trim();
+        // Defensive check: if scientific notation was received (e.g. from an old cached script or event), recover raw ID
+        if (idStr.includes('e+') || idStr.includes('E+')) {
+            const prefix = idStr.split(/[eE]/)[0].replace('.', '').slice(0, 8);
+            const matched = state.clients.find(c => String(c.id).startsWith(prefix)) ||
+                            state.licenses.find(l => String(l.client_id).startsWith(prefix));
+            if (matched) {
+                idStr = String(matched.client_id || matched.id);
+            }
+        }
         const modal = document.getElementById('modal-client-detail');
         const orgEl = document.getElementById('client-detail-org');
         const subEl = document.getElementById('client-detail-sub');
@@ -2055,7 +2332,7 @@
         bodyEl.innerHTML = '<div class="table-empty"><div class="table-empty-text">Loading tenant profile...</div></div>';
         modal.classList.add('open');
 
-        const res = await apiRequest(`/api/clients/${clientId}`);
+        const res = await apiRequest(`/api/clients/${encodeURIComponent(idStr)}`);
         if (!res.success || !res.data) {
             bodyEl.innerHTML = `<div class="table-empty"><div class="table-empty-text" style="color: var(--ruby);">${escapeHtml(res.message || 'Failed to load client details')}</div></div>`;
             return;
@@ -2141,7 +2418,7 @@
     }
 
     async function deleteClient(clientId) {
-        const client = state.clients.find(c => Number(c.id) === Number(clientId));
+        const client = state.clients.find(c => String(c.id) === String(clientId));
         const ok = await showConfirmModal(
             'Delete Client Organization',
             `Permanently remove "${client?.org_name || clientId}" and its associated records?\n\nThis action cannot be undone.`
@@ -2354,9 +2631,19 @@
             });
         }
 
+        const total = filtered.length;
+        const { safePage } = updatePaginationControls({
+            prefix: 'contacts',
+            page: state.contactsPage,
+            limit: state.contactsLimit,
+            total,
+            unitLabel: 'contacts'
+        });
+        state.contactsPage = safePage;
+
         if (totalBadge) totalBadge.textContent = state.contacts.length;
 
-        if (filtered.length === 0) {
+        if (total === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="6">
@@ -2369,7 +2656,9 @@
             return;
         }
 
-        tbody.innerHTML = filtered.map(c => `
+        const paged = filtered.slice((safePage - 1) * state.contactsLimit, safePage * state.contactsLimit);
+
+        tbody.innerHTML = paged.map(c => `
             <tr>
                 <td>
                     <span style="font-size: 13px; font-weight: 500; color: var(--text-white);">${escapeHtml(c.email)}</span>
@@ -2396,6 +2685,24 @@
                 </td>
             </tr>
         `).join('');
+    }
+
+    function prevContactsPage() {
+        if (state.contactsPage > 1) {
+            state.contactsPage--;
+            renderContactsTable();
+        }
+    }
+
+    function nextContactsPage() {
+        state.contactsPage++;
+        renderContactsTable();
+    }
+
+    function changeContactsPageSize(sz) {
+        state.contactsLimit = Math.max(10, Number(sz) || 25);
+        state.contactsPage = 1;
+        renderContactsTable();
     }
 
     async function deleteContact(idOrEmail) {
@@ -3378,7 +3685,7 @@
         if (subj) subj.value = '';
         if (pre) pre.value = '';
         if (canvas) {
-            canvas.innerHTML = `<p>Hello {{{contact.first_name|there}}},</p><p>We are reaching out with an official update regarding your CortexCo workspace and connected infrastructure.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 62px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #111827; letter-spacing: -0.2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0 0 6px 0;">This is an automated message from CortexCo. Please do not reply to this email, as this mailbox is not monitored.</p><p style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin: 0;">To stop receiving updates, <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #2563eb; text-decoration: underline;">unsubscribe here</a>.</p>`;
+            canvas.innerHTML = `<p>Hello {{{contact.first_name|there}}},</p><p>We are reaching out with an official update regarding your CortexCo workspace and connected infrastructure.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="border-left: 3px solid #2f8cff; padding-left: 12px;"><div style="font-size: 16px; font-weight: 800; color: #111827; letter-spacing: -0.2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0 0 6px 0;">This is an automated message from CortexCo. Please do not reply to this email, as this mailbox is not monitored.</p><p style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin: 0;">To stop receiving updates, <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #2563eb; text-decoration: underline;">unsubscribe here</a>.</p>`;
         }
         if (raw) raw.value = '';
         showToast('Broadcast composer reset', 'info');
@@ -3473,7 +3780,17 @@
         const tbody = document.getElementById('broadcasts-history-tbody');
         if (!tbody) return;
 
-        if (state.broadcasts.length === 0) {
+        const total = (state.broadcasts || []).length;
+        const { safePage } = updatePaginationControls({
+            prefix: 'broadcasts',
+            page: state.broadcastsPage,
+            limit: state.broadcastsLimit,
+            total,
+            unitLabel: 'broadcasts'
+        });
+        state.broadcastsPage = safePage;
+
+        if (total === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="6">
@@ -3486,7 +3803,9 @@
             return;
         }
 
-        tbody.innerHTML = state.broadcasts.map(b => {
+        const paged = state.broadcasts.slice((safePage - 1) * state.broadcastsLimit, safePage * state.broadcastsLimit);
+
+        tbody.innerHTML = paged.map(b => {
             const isSent = b.status === 'sent';
             const isDraft = b.status === 'draft';
             const statusClass = isSent ? 'active' : (isDraft ? 'suspended' : 'live');
@@ -3530,6 +3849,24 @@
                 </tr>
             `;
         }).join('');
+    }
+
+    function prevBroadcastsPage() {
+        if (state.broadcastsPage > 1) {
+            state.broadcastsPage--;
+            renderBroadcastsTable();
+        }
+    }
+
+    function nextBroadcastsPage() {
+        state.broadcastsPage++;
+        renderBroadcastsTable();
+    }
+
+    function changeBroadcastsPageSize(sz) {
+        state.broadcastsLimit = Math.max(10, Number(sz) || 25);
+        state.broadcastsPage = 1;
+        renderBroadcastsTable();
     }
 
     async function sendDraftBroadcast(broadcastId) {
@@ -3638,7 +3975,7 @@
         if (cc) cc.value = '';
         if (bcc) bcc.value = '';
         if (canvas) {
-            canvas.innerHTML = `<p>Hello,</p><p>Thank you for contacting CortexCo Support. We have received your query and are reviewing the details.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 72px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 15px; font-weight: 700; color: #111827; margin-top: 2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; font-size: 13px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 500;">cortexco.in</a><span style="color: #cbd5e1; margin: 0 8px;">|</span><a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: none; font-weight: 500;">support@cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0;">Need help? Reply to this email or write to <a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: underline;">support@cortexco.in</a> and our team will get back to you as soon as possible.</p>`;
+            canvas.innerHTML = `<p>Hello,</p><p>Thank you for contacting CortexCo Support. We have received your query and are reviewing the details.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="border-left: 3px solid #2f8cff; padding-left: 12px;"><div style="font-size: 16px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; font-size: 13px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 500;">cortexco.in</a><span style="color: #cbd5e1; margin: 0 8px;">|</span><a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: none; font-weight: 500;">support@cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0;">Need help? Reply to this email or write to <a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: underline;">support@cortexco.in</a> and our team will get back to you as soon as possible.</p>`;
         }
         state.supportAttachments = [];
         renderAttachedFileChips();
@@ -3766,7 +4103,7 @@
         const canvas = document.getElementById('supp-editor-canvas');
         if (!canvas) return;
 
-        const signatureBlock = `<br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 72px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 11px; color: #475569; margin-top: 2px;">CortexCo Engineering Infrastructure</div><div style="margin-top: 6px;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table>`;
+        const signatureBlock = `<br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="border-left: 3px solid #2f8cff; padding-left: 12px;"><div style="font-size: 16px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 11px; color: #475569; margin-top: 2px;">CortexCo Engineering Infrastructure</div><div style="margin-top: 6px;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table>`;
 
         const templates = {
             welcome: {
@@ -3833,7 +4170,7 @@
         const tbody = document.getElementById('tracker-table-body');
         if (!tbody) return;
 
-        let filtered = state.sentEmails;
+        let filtered = state.sentEmails || [];
         if (state.trackerFilter && state.trackerFilter !== 'all') {
             if (state.trackerFilter === 'opened') {
                 filtered = filtered.filter(e => e.last_event === 'opened' || e.last_event === 'clicked');
@@ -3854,7 +4191,17 @@
             });
         }
 
-        if (filtered.length === 0) {
+        const total = filtered.length;
+        const { safePage } = updatePaginationControls({
+            prefix: 'tracker',
+            page: state.trackerPage,
+            limit: state.trackerLimit,
+            total,
+            unitLabel: 'delivery events'
+        });
+        state.trackerPage = safePage;
+
+        if (total === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="6">
@@ -3867,7 +4214,9 @@
             return;
         }
 
-        tbody.innerHTML = filtered.map(item => {
+        const paged = filtered.slice((safePage - 1) * state.trackerLimit, safePage * state.trackerLimit);
+
+        tbody.innerHTML = paged.map(item => {
             const status = (item.last_event || 'sent').toLowerCase();
             const recipientStr = Array.isArray(item.to) ? item.to.join(', ') : (item.to || '---');
             const pillClass = status;
@@ -3902,6 +4251,24 @@
                 </tr>
             `;
         }).join('');
+    }
+
+    function prevTrackerPage() {
+        if (state.trackerPage > 1) {
+            state.trackerPage--;
+            renderTrackerTable();
+        }
+    }
+
+    function nextTrackerPage() {
+        state.trackerPage++;
+        renderTrackerTable();
+    }
+
+    function changeTrackerPageSize(sz) {
+        state.trackerLimit = Math.max(10, Number(sz) || 25);
+        state.trackerPage = 1;
+        renderTrackerTable();
     }
 
     async function inspectEmailDelivery(emailId) {
@@ -4264,7 +4631,7 @@
 
         const isSuper = state.currentAdmin?.role === 'super_admin';
         tbody.innerHTML = admins.map(a => {
-            const isSelf = Number(state.currentAdmin?.id) === Number(a.id);
+            const isSelf = String(state.currentAdmin?.id) === String(a.id);
             const roleLabel = a.role === 'super_admin' ? 'Super Admin' : 'Operator Admin';
             return `
                 <tr>
@@ -4275,8 +4642,8 @@
                     <td><span style="font-size: 11.5px; color: var(--text-muted);">${formatDate(a.created_at)}</span></td>
                     <td class="align-right">
                         <div class="row-actions">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.editAdminUser(${Number(a.id)})">Edit</button>
-                            ${!isSelf ? `<button type="button" class="btn btn-danger btn-sm" onclick="window.app.deleteAdminUser(${Number(a.id)})" ${!isSuper ? 'title="Super Admin privileges required"' : ''}>Remove</button>` : ''}
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.editAdminUser('${escapeHtml(String(a.id || ''))}')">Edit</button>
+                            ${!isSelf ? `<button type="button" class="btn btn-danger btn-sm" onclick="window.app.deleteAdminUser('${escapeHtml(String(a.id || ''))}')" ${!isSuper ? 'title="Super Admin privileges required"' : ''}>Remove</button>` : ''}
                         </div>
                     </td>
                 </tr>
@@ -4316,12 +4683,12 @@
     }
 
     function editAdminUser(adminId) {
-        const admin = state.admins.find(a => Number(a.id) === Number(adminId));
+        const admin = state.admins.find(a => String(a.id) === String(adminId));
         if (admin) openAdminModal(admin);
     }
 
     async function deleteAdminUser(adminId) {
-        const admin = state.admins.find(a => Number(a.id) === Number(adminId));
+        const admin = state.admins.find(a => String(a.id) === String(adminId));
         const ok = await showConfirmModal('Remove Administrator', `Revoke console access for "${admin?.email || adminId}"?`);
         if (!ok) return;
         const res = await apiRequest(`/api/admin/${adminId}`, 'DELETE');
@@ -4855,16 +5222,22 @@
 
         // Telemetry Logs Refresh & Filter
         const btnRefreshLogs = document.getElementById('btn-refresh-logs');
-        if (btnRefreshLogs) btnRefreshLogs.addEventListener('click', loadLogs);
+        if (btnRefreshLogs) btnRefreshLogs.addEventListener('click', () => loadLogs(1));
 
         const logActionFilter = document.getElementById('log-action-filter');
-        if (logActionFilter) logActionFilter.addEventListener('change', loadLogs);
+        if (logActionFilter) logActionFilter.addEventListener('change', () => loadLogs(1));
 
         const logStatusFilter = document.getElementById('log-status-filter');
-        if (logStatusFilter) logStatusFilter.addEventListener('change', renderLogsTable);
+        if (logStatusFilter) logStatusFilter.addEventListener('change', () => loadLogs(1));
 
         const logSearchInput = document.getElementById('log-search-input');
-        if (logSearchInput) logSearchInput.addEventListener('input', renderLogsTable);
+        let logSearchTimer = null;
+        if (logSearchInput) {
+            logSearchInput.addEventListener('input', () => {
+                clearTimeout(logSearchTimer);
+                logSearchTimer = setTimeout(() => loadLogs(1), 300);
+            });
+        }
 
         // Client Search
         const clientSearchInput = document.getElementById('client-search-input');
@@ -5124,6 +5497,7 @@
         // Restore active tab immediately on load/refresh
         const initialTab = getStoredActiveTab();
         switchTab(initialTab);
+        updateTelemetryTailUI();
 
         window.addEventListener('hashchange', () => {
             const currentHashTab = getStoredActiveTab();
@@ -5159,6 +5533,11 @@
         openIssueModalForClient,
         openEditLicenseModal,
         extendLicenseDays,
+        openExtendModal,
+        setExtendDays,
+        updateExtendPreview,
+        submitExtendLicense,
+        quickAddDaysToEditForm,
         deleteLicense,
         openHwidModal,
         toggleHwidBlock,
@@ -5184,6 +5563,29 @@
         checkAuthSession,
         handleLoginSubmit,
         toggleLoginPassword,
+
+        // Studio Pagination Controls
+        prevLicensesPage,
+        nextLicensesPage,
+        changeLicensesPageSize,
+        prevDevicesPage,
+        nextDevicesPage,
+        changeDevicesPageSize,
+        prevTelemetryPage,
+        nextTelemetryPage,
+        changeTelemetryPageSize,
+        prevClientsPage,
+        nextClientsPage,
+        changeClientsPageSize,
+        prevContactsPage,
+        nextContactsPage,
+        changeContactsPageSize,
+        prevBroadcastsPage,
+        nextBroadcastsPage,
+        changeBroadcastsPageSize,
+        prevTrackerPage,
+        nextTrackerPage,
+        changeTrackerPageSize,
 
         // Gmail Suite Formatting & Compose
         applyFontFamily,

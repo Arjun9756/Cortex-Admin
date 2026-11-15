@@ -46,33 +46,101 @@ export const UsageLogModel = {
         }
     },
 
-    async getRecentLogs(limit = 50, actionType?: string) {
+    async getPaginatedLogs(options: {
+        page?: number | undefined;
+        limit?: number | undefined;
+        action_type?: string | undefined;
+        status?: string | undefined;
+        search?: string | undefined;
+    }) {
         let connection;
         try {
             connection = await pool.getConnection();
-            let query = `
-                SELECT u.*, 
+            const page = Math.max(1, parseInt(String(options.page || 1), 10));
+            const limit = Math.min(200, Math.max(1, parseInt(String(options.limit || 50), 10)));
+            const offset = (page - 1) * limit;
+
+            const whereClauses: string[] = [];
+            const queryParams: any[] = [];
+            const countParams: any[] = [];
+
+            if (options.action_type && options.action_type !== 'all') {
+                whereClauses.push('u.action_type = ?');
+                queryParams.push(options.action_type);
+                countParams.push(options.action_type);
+            }
+
+            if (options.status && options.status !== 'all') {
+                whereClauses.push('u.status = ?');
+                queryParams.push(options.status);
+                countParams.push(options.status);
+            }
+
+            let needsJoinForCount = false;
+            if (options.search && options.search.trim()) {
+                const s = `%${options.search.trim()}%`;
+                whereClauses.push('(u.ip_address LIKE ? OR c.org_name LIKE ? OR l.license_key LIKE ?)');
+                queryParams.push(s, s, s);
+                countParams.push(s, s, s);
+                needsJoinForCount = true;
+            }
+
+            const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+            // Count query: use direct index when no joined search is needed
+            let countSql = '';
+            if (needsJoinForCount) {
+                countSql = `
+                    SELECT COUNT(*) as total
+                    FROM usage_logs u
+                    LEFT JOIN clients c ON u.client_id = c.id
+                    LEFT JOIN licenses l ON u.license_id = l.id
+                    ${whereSql}
+                `;
+            } else {
+                const directWhere = whereClauses.map(w => w.replace(/^u\./, '')).join(' AND ');
+                countSql = `SELECT COUNT(*) as total FROM usage_logs ${directWhere ? 'WHERE ' + directWhere : ''}`;
+            }
+
+            const [countRows]: any = await connection.query(countSql, countParams);
+            const total = Number(countRows[0]?.total || 0);
+
+            // Data query using indexed created_at DESC order
+            const dataSql = `
+                SELECT u.id, u.client_id, u.license_id, u.action_type, u.query_count, u.status, u.ip_address, u.metadata, u.created_at,
                        c.org_name, c.contact_name, c.email as client_email,
                        l.license_key
                 FROM usage_logs u
                 LEFT JOIN clients c ON u.client_id = c.id
                 LEFT JOIN licenses l ON u.license_id = l.id
+                ${whereSql}
+                ORDER BY u.created_at DESC
+                LIMIT ? OFFSET ?
             `;
-            const params: any[] = [];
+            queryParams.push(limit, offset);
 
-            if (actionType) {
-                query += ` WHERE u.action_type = ?`;
-                params.push(actionType);
-            }
+            const [rows] = await connection.query<RowDataPacket[]>(dataSql, queryParams);
+            const totalPages = Math.max(1, Math.ceil(total / limit));
 
-            query += ` ORDER BY u.created_at DESC LIMIT ?`;
-            params.push(limit);
-
-            const [rows] = await connection.query<RowDataPacket[]>(query, params);
-            return rows;
+            return {
+                data: rows,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1
+                }
+            };
         } finally {
             if (connection) connection.release();
         }
+    },
+
+    async getRecentLogs(limit = 50, actionType?: string) {
+        const result = await this.getPaginatedLogs({ page: 1, limit, action_type: actionType });
+        return result.data;
     },
 
     async getPingStatsToday() {

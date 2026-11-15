@@ -47,6 +47,17 @@ export const LicenseController = {
 
     async getAll(req: Request, res: Response) {
         try {
+            const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+            const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 25;
+            const status = req.query.status as string | undefined;
+            const search = req.query.search as string | undefined;
+            const sort = req.query.sort as string | undefined;
+
+            if (page !== undefined) {
+                const result = await LicenseService.getPaginatedLicenses({ page, limit, status, search, sort });
+                return res.status(200).json({ success: true, data: result.data, pagination: result.pagination });
+            }
+
             const licenses = await LicenseService.getAllLicenses();
             res.status(200).json({ success: true, data: licenses });
         } catch (error: any) {
@@ -146,6 +157,16 @@ export const LicenseController = {
 
     async getAllHwidsGlobal(req: Request, res: Response) {
         try {
+            const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+            const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 25;
+            const search = req.query.search as string | undefined;
+            const blocked = req.query.blocked as string | undefined;
+
+            if (page !== undefined) {
+                const result = await LicenseService.getPaginatedHwidsGlobal({ page, limit, search, blocked });
+                return res.status(200).json({ success: true, data: result.data, pagination: result.pagination });
+            }
+
             const hwids = await LicenseService.getAllHwidsGlobal();
             res.status(200).json({ success: true, data: hwids });
         } catch (error: any) {

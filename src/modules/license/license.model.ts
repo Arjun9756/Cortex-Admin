@@ -93,6 +93,109 @@ export const LicenseModel = {
         }
     },
 
+    async findPaginated(options: {
+        page?: number | undefined;
+        limit?: number | undefined;
+        status?: string | undefined;
+        search?: string | undefined;
+        sort?: string | undefined;
+    }) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const page = Math.max(1, parseInt(String(options.page || 1), 10));
+            const limit = Math.min(100, Math.max(1, parseInt(String(options.limit || 25), 10)));
+            const offset = (page - 1) * limit;
+
+            const whereClauses: string[] = [];
+            const queryParams: any[] = [];
+            const countParams: any[] = [];
+
+            if (options.status && options.status !== 'all') {
+                if (options.status === 'expiring') {
+                    whereClauses.push("l.status = 'active' AND l.expiry_date BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 30 DAY)");
+                } else if (options.status === 'expired') {
+                    whereClauses.push("(l.status = 'expired' OR l.expiry_date < NOW())");
+                } else {
+                    whereClauses.push('l.status = ?');
+                    queryParams.push(options.status);
+                    countParams.push(options.status);
+                }
+            }
+
+            if (options.search && options.search.trim()) {
+                const s = `%${options.search.trim()}%`;
+                whereClauses.push('(l.license_key LIKE ? OR c.org_name LIKE ? OR c.contact_name LIKE ? OR c.email LIKE ?)');
+                queryParams.push(s, s, s, s);
+                countParams.push(s, s, s, s);
+            }
+
+            const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+            // Count query
+            const countSql = `
+                SELECT COUNT(*) as total
+                FROM licenses l
+                LEFT JOIN clients c ON l.client_id = c.id
+                ${whereSql}
+            `;
+            const [countRows]: any = await connection.query(countSql, countParams);
+            const total = Number(countRows[0]?.total || 0);
+
+            // Sorting
+            let orderSql = 'ORDER BY l.issued_at DESC';
+            if (options.sort === 'expiry_asc') {
+                orderSql = 'ORDER BY l.expiry_date ASC';
+            } else if (options.sort === 'org_asc') {
+                orderSql = 'ORDER BY c.org_name ASC';
+            } else if (options.sort === 'seats_desc') {
+                orderSql = 'ORDER BY bound_machines_count DESC';
+            }
+
+            const dataSql = `
+                SELECT 
+                    l.*, 
+                    c.org_name, 
+                    c.contact_name, 
+                    c.email as client_email, 
+                    c.status as client_status,
+                    COALESCE(h_stats.bound_count, 0) as bound_machines_count,
+                    COALESCE(h_stats.blocked_count, 0) as blocked_machines_count
+                FROM licenses l
+                LEFT JOIN clients c ON l.client_id = c.id
+                LEFT JOIN (
+                    SELECT 
+                        license_id, 
+                        COUNT(*) as bound_count,
+                        SUM(CASE WHEN is_blocked = 1 THEN 1 ELSE 0 END) as blocked_count
+                    FROM license_hwids
+                    GROUP BY license_id
+                ) h_stats ON l.id = h_stats.license_id
+                ${whereSql}
+                ${orderSql}
+                LIMIT ? OFFSET ?
+            `;
+            queryParams.push(limit, offset);
+
+            const [rows] = await connection.query<RowDataPacket[]>(dataSql, queryParams);
+            const totalPages = Math.max(1, Math.ceil(total / limit));
+
+            return {
+                data: rows,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1
+                }
+            };
+        } finally {
+            if (connection) connection.release();
+        }
+    },
+
     async findAll() {
         let connection;
         try {
@@ -393,6 +496,78 @@ export const LicenseModel = {
                 [licenseId]
             );
             return res.affectedRows;
+        } finally {
+            if (connection) connection.release();
+        }
+    },
+
+    async getPaginatedHwidsGlobal(options: {
+        page?: number | undefined;
+        limit?: number | undefined;
+        search?: string | undefined;
+        blocked?: string | undefined;
+    }) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const page = Math.max(1, parseInt(String(options.page || 1), 10));
+            const limit = Math.min(100, Math.max(1, parseInt(String(options.limit || 25), 10)));
+            const offset = (page - 1) * limit;
+
+            const whereClauses: string[] = [];
+            const queryParams: any[] = [];
+            const countParams: any[] = [];
+
+            if (options.blocked === '1' || options.blocked === 'blocked') {
+                whereClauses.push('h.is_blocked = 1');
+            } else if (options.blocked === '0' || options.blocked === 'active') {
+                whereClauses.push('h.is_blocked = 0');
+            }
+
+            if (options.search && options.search.trim()) {
+                const s = `%${options.search.trim()}%`;
+                whereClauses.push('(h.hwid LIKE ? OR h.label LIKE ? OR l.license_key LIKE ? OR c.org_name LIKE ?)');
+                queryParams.push(s, s, s, s);
+                countParams.push(s, s, s, s);
+            }
+
+            const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+            const countSql = `
+                SELECT COUNT(*) as total
+                FROM license_hwids h
+                JOIN licenses l ON h.license_id = l.id
+                JOIN clients c ON l.client_id = c.id
+                ${whereSql}
+            `;
+            const [countRows]: any = await connection.query(countSql, countParams);
+            const total = Number(countRows[0]?.total || 0);
+
+            const dataSql = `
+                SELECT h.*, l.license_key, l.status as license_status, c.org_name, c.email as client_email
+                FROM license_hwids h
+                JOIN licenses l ON h.license_id = l.id
+                JOIN clients c ON l.client_id = c.id
+                ${whereSql}
+                ORDER BY COALESCE(h.last_seen_at, h.first_seen_at) DESC
+                LIMIT ? OFFSET ?
+            `;
+            queryParams.push(limit, offset);
+
+            const [rows] = await connection.query<RowDataPacket[]>(dataSql, queryParams);
+            const totalPages = Math.max(1, Math.ceil(total / limit));
+
+            return {
+                data: rows,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1
+                }
+            };
         } finally {
             if (connection) connection.release();
         }

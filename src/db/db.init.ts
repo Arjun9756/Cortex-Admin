@@ -5,7 +5,7 @@ import { snowflake } from '../utils/SnowFlakeIdGenerator.js';
 import { RowDataPacket } from 'mysql2';
 
 export async function initDatabase() {
-    let connection;
+    let connection: any;
     try {
         connection = await pool.getConnection();
         console.log('🔧 Checking & initializing MySQL database schema in:', env.AIVEN_SQL_DATABASE);
@@ -150,10 +150,55 @@ export async function initDatabase() {
             // column already exists
         }
 
+        // 7. High-Performance Indexing Suite & Self-Healing Optimization
+        const ensureIndex = async (tableName: string, indexName: string, columnsSql: string) => {
+            try {
+                const [rows]: any = await connection.query(`
+                    SELECT INDEX_NAME 
+                    FROM INFORMATION_SCHEMA.STATISTICS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                      AND TABLE_NAME = ? 
+                      AND INDEX_NAME = ?
+                    LIMIT 1
+                `, [tableName, indexName]);
+                if (!rows || rows.length === 0) {
+                    await connection.query(`ALTER TABLE ${tableName} ADD INDEX ${indexName} (${columnsSql})`);
+                    console.log(`✅ Applied index optimization: ${tableName}.${indexName} (${columnsSql})`);
+                }
+            } catch (idxErr: any) {
+                console.error(`⚠️ Could not ensure index ${indexName} on ${tableName}:`, idxErr.message);
+            }
+        };
+
+        // usage_logs high-throughput telemetry indexes
+        await ensureIndex('usage_logs', 'idx_usage_action_created', 'action_type, created_at');
+        await ensureIndex('usage_logs', 'idx_usage_action_status_created', 'action_type, status, created_at');
+        await ensureIndex('usage_logs', 'idx_usage_license_created', 'license_id, created_at');
+        await ensureIndex('usage_logs', 'idx_usage_ip_created', 'ip_address, created_at');
+
+        // licenses index optimizations (removes filesort on expiration & timeline)
+        await ensureIndex('licenses', 'idx_licenses_status_expiry', 'status, expiry_date');
+        await ensureIndex('licenses', 'idx_licenses_expiry', 'expiry_date');
+        await ensureIndex('licenses', 'idx_licenses_issued', 'issued_at');
+        await ensureIndex('licenses', 'idx_licenses_client_status', 'client_id, status');
+
+        // clients indexes
+        await ensureIndex('clients', 'idx_clients_created', 'created_at');
+        await ensureIndex('clients', 'idx_clients_status_created', 'status, created_at');
+
+        // license_hwids indexes
+        await ensureIndex('license_hwids', 'idx_hwids_license_blocked', 'license_id, is_blocked');
+        await ensureIndex('license_hwids', 'idx_hwids_last_seen', 'last_seen_at');
+        await ensureIndex('license_hwids', 'idx_hwids_first_seen', 'first_seen_at');
+        await ensureIndex('license_hwids', 'idx_hwids_blocked', 'is_blocked');
+
+        // client_connectors
+        await ensureIndex('client_connectors', 'idx_connectors_client_status', 'client_id, status');
+
         // Sync/Seed default super admin from env
         const adminEmail = (env.ADMIN_DEFAULT_EMAIL || 'admin@cortex.com').toLowerCase().trim();
         const passwordHash = hashPassword(env.ADMIN_DEFAULT_PASSWORD || 'Admin@Cortex2026');
-        const [existing] = await connection.query<RowDataPacket[]>(
+        const [existing]: any = await connection.query(
             'SELECT id FROM admin_users WHERE email = ?',
             [adminEmail]
         );

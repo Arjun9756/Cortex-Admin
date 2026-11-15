@@ -61,6 +61,11 @@ function resolvePublicPath(): string {
 
 const publicPath = resolvePublicPath();
 
+// Explicitly return 204 No Content for favicon requests to prevent loading any icon in browser tabs
+app.get(['/favicon.ico', '/favicon.png'], (req: Request, res: Response) => {
+    res.status(204).end();
+});
+
 // Cache-busting: Disable browser caching for admin control plane assets so updates apply immediately
 app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');

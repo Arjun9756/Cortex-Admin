@@ -64,6 +64,77 @@ export const ClientModel = {
         }
     },
 
+    async findPaginated(options: {
+        page?: number | undefined;
+        limit?: number | undefined;
+        status?: string | undefined;
+        search?: string | undefined;
+    }) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const page = Math.max(1, parseInt(String(options.page || 1), 10));
+            const limit = Math.min(100, Math.max(1, parseInt(String(options.limit || 20), 10)));
+            const offset = (page - 1) * limit;
+
+            const whereClauses: string[] = [];
+            const queryParams: any[] = [];
+            const countParams: any[] = [];
+
+            if (options.status && options.status !== 'all') {
+                whereClauses.push('c.status = ?');
+                queryParams.push(options.status);
+                countParams.push(options.status);
+            }
+
+            if (options.search && options.search.trim()) {
+                const s = `%${options.search.trim()}%`;
+                whereClauses.push('(c.org_name LIKE ? OR c.contact_name LIKE ? OR c.email LIKE ? OR c.phone LIKE ?)');
+                queryParams.push(s, s, s, s);
+                countParams.push(s, s, s, s);
+            }
+
+            const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+            // Count query directly on clients table using indexed status/created_at
+            const directWhere = whereClauses.map(w => w.replace(/^c\./, '')).join(' AND ');
+            const countSql = `SELECT COUNT(*) as total FROM clients ${directWhere ? 'WHERE ' + directWhere : ''}`;
+            const [countRows]: any = await connection.query(countSql, countParams);
+            const total = Number(countRows[0]?.total || 0);
+
+            // Data query
+            const dataSql = `
+                SELECT c.*, 
+                       COUNT(l.id) AS total_licenses,
+                       SUM(CASE WHEN l.status = 'active' AND l.expiry_date > NOW() THEN 1 ELSE 0 END) AS active_licenses
+                FROM clients c
+                LEFT JOIN licenses l ON c.id = l.client_id
+                ${whereSql}
+                GROUP BY c.id
+                ORDER BY c.created_at DESC
+                LIMIT ? OFFSET ?
+            `;
+            queryParams.push(limit, offset);
+
+            const [rows] = await connection.query<RowDataPacket[]>(dataSql, queryParams);
+            const totalPages = Math.max(1, Math.ceil(total / limit));
+
+            return {
+                data: rows,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1
+                }
+            };
+        } finally {
+            if (connection) connection.release();
+        }
+    },
+
     async findAll() {
         let connection;
         try {

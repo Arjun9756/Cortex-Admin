@@ -24,10 +24,25 @@ export const AnalyticsController = {
 
     async getLogs(req: Request, res: Response) {
         try {
-            const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
-            const actionType = req.query.action_type as string | undefined;
-            const logs = await AnalyticsService.getRecentLogs(limit, actionType);
-            res.status(200).json({ success: true, data: logs });
+            const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+            const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+            const actionType = (req.query.action_type as string) || undefined;
+            const status = (req.query.status as string) || undefined;
+            const search = (req.query.search as string) || undefined;
+
+            const result = await AnalyticsService.getPaginatedLogs({
+                page,
+                limit,
+                action_type: actionType,
+                status,
+                search
+            });
+
+            res.status(200).json({
+                success: true,
+                data: result.data,
+                pagination: result.pagination
+            });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }

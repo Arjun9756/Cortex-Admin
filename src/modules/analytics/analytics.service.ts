@@ -210,6 +210,10 @@ export const AnalyticsService = {
         return await UsageLogModel.getRecentLogs(limit, actionType);
     },
 
+    async getPaginatedLogs(options: { page?: number | undefined; limit?: number | undefined; action_type?: string | undefined; status?: string | undefined; search?: string | undefined }) {
+        return await UsageLogModel.getPaginatedLogs(options);
+    },
+
     async getPingTimeline() {
         return await UsageLogModel.getPingTimelineHourly();
     },

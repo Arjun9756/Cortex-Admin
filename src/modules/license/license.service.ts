@@ -63,6 +63,10 @@ export const LicenseService = {
         return await LicenseModel.findAll();
     },
 
+    async getPaginatedLicenses(options: { page?: number | undefined; limit?: number | undefined; status?: string | undefined; search?: string | undefined; sort?: string | undefined }) {
+        return await LicenseModel.findPaginated(options);
+    },
+
     async getById(id: string) {
         const license = await LicenseModel.findById(id);
         if (!license) throw new Error(`License with ID ${id} not found`);
@@ -114,6 +118,10 @@ export const LicenseService = {
 
     async getAllHwidsGlobal() {
         return await LicenseModel.getAllHwidsGlobal();
+    },
+
+    async getPaginatedHwidsGlobal(options: { page?: number | undefined; limit?: number | undefined; search?: string | undefined; blocked?: string | undefined }) {
+        return await LicenseModel.getPaginatedHwidsGlobal(options);
     },
 
     async resetHwids(licenseId: string) {

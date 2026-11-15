@@ -9,7 +9,9 @@ create table clients(
     updated_at timestamp default current_timestamp on update current_timestamp,
 
     index idx_email (email),
-    index idx_status(status)
+    index idx_status (status),
+    index idx_clients_created (created_at),
+    index idx_clients_status_created (status, created_at)
 );
 
 create table licenses(
@@ -26,7 +28,11 @@ create table licenses(
     foreign key (client_id) references clients(id) on delete cascade,
     index idx_license_key (license_key),
     index idx_status (status),
-    index idx_client_id (client_id)
+    index idx_client_id (client_id),
+    index idx_licenses_status_expiry (status, expiry_date),
+    index idx_licenses_expiry (expiry_date),
+    index idx_licenses_issued (issued_at),
+    index idx_licenses_client_status (client_id, status)
 );
 
 create table license_hwids(
@@ -40,7 +46,11 @@ create table license_hwids(
     foreign key (license_id) references licenses(id) on delete cascade,
     unique key uniq_license_hwid (license_id, hwid),
     index idx_license_id (license_id),
-    index idx_hwid (hwid(128))
+    index idx_hwid (hwid(128)),
+    index idx_hwids_license_blocked (license_id, is_blocked),
+    index idx_hwids_last_seen (last_seen_at),
+    index idx_hwids_first_seen (first_seen_at),
+    index idx_hwids_blocked (is_blocked)
 );
 
 create table client_connectors(
@@ -53,18 +63,20 @@ create table client_connectors(
     account_email varchar(255),
     account_id varchar(255),
     scopes json,
+    webhook_url varchar(500),
     connected_at timestamp default current_timestamp,
     updated_at timestamp default current_timestamp on update current_timestamp,
     foreign key (client_id) references clients(id) on delete cascade,
     unique key uniq_license_provider (license_key, provider),
     index idx_license (license_key),
-    index idx_client_id (client_id)
+    index idx_client_id (client_id),
+    index idx_connectors_client_status (client_id, status)
 );
 
 create table usage_logs(
     id varchar(32) primary key,
-    client_id varchar(32) not null,
-    license_id varchar(32) not null,
+    client_id varchar(32) null,
+    license_id varchar(32) null,
     action_type enum('ping' , 'query' , 'export' , 'other') not null,
     query_count int default 0,
     status enum('success' , 'failed') default 'success',
@@ -72,11 +84,16 @@ create table usage_logs(
     metadata JSON,
     created_at timestamp default current_timestamp,
 
-    foreign key (client_id) references clients(id) on delete cascade,
-    foreign key (license_id) references licenses(id) on delete cascade,
+    foreign key (client_id) references clients(id) on delete set null,
+    foreign key (license_id) references licenses(id) on delete set null,
     index idx_client_created (client_id, created_at),
     index idx_action_type (action_type),
-    index idx_created_at (created_at)   
+    index idx_created_at (created_at),
+    index idx_status (status),
+    index idx_usage_action_created (action_type, created_at),
+    index idx_usage_action_status_created (action_type, status, created_at),
+    index idx_usage_license_created (license_id, created_at),
+    index idx_usage_ip_created (ip_address, created_at)
 );
 
 create table admin_users(
