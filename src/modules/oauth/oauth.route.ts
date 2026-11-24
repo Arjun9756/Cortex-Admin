@@ -104,8 +104,8 @@ oauthRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, error: `Unsupported provider: ${provider}` });
         }
 
-        const licenseKey = (req.query.license_key as string) || '';
-        const returnUrl = (req.query.return_url as string) || 'http://localhost:5173';
+        const licenseKey = (req.query.license_key as string) || (req.query.licenseKey as string) || '';
+        const returnUrl = (req.query.return_url as string) || (req.query.returnUrl as string) || 'http://localhost:5173';
 
         // 1. Verify Client License
         const licenseCheck = await validateLicense(licenseKey);
