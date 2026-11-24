@@ -1,14 +1,33 @@
-import pool from '../config/db.config.js';
+import pool, { getSslConfig } from '../config/db.config.js';
 import env from '../config/env.config.js';
 import { hashPassword } from '../utils/auth.util.js';
 import { snowflake } from '../utils/SnowFlakeIdGenerator.js';
-import { RowDataPacket } from 'mysql2';
+import mysql, { RowDataPacket } from 'mysql2/promise';
 
 export async function initDatabase() {
+    const dbName = env.DATABASE_SQL_DATABASE || 'cortex_admin';
+
+    // Step 0: Auto-create database on TiDB Cloud / MySQL if not exists
+    try {
+        const bootstrapConn = await mysql.createConnection({
+            host: env.DATABASE_SQL_HOST,
+            port: parseInt(env.DATABASE_SQL_PORT || '4000', 10),
+            user: env.DATABASE_SQL_USER,
+            password: env.DATABASE_SQL_PASSWORD,
+            ssl: getSslConfig(),
+            connectTimeout: 15000
+        });
+        await bootstrapConn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+        await bootstrapConn.end();
+        console.log(`✅ Ensured database '${dbName}' exists on TiDB / MySQL cluster.`);
+    } catch (bootErr: any) {
+        console.warn(`⚠️ Pre-check database creation note: ${bootErr.message}`);
+    }
+
     let connection: any;
     try {
         connection = await pool.getConnection();
-        console.log('🔧 Checking & initializing MySQL database schema in:', env.AIVEN_SQL_DATABASE);
+        console.log('🔧 Checking & initializing database schema in:', dbName);
 
         // 1. Clients Table
         await connection.query(`

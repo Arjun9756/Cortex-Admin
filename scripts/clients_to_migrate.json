@@ -1,0 +1,20 @@
+[
+  {
+    "org_name": "Example Org 1",
+    "contact_name": "Client One",
+    "email": "client1@example.com",
+    "phone": "+91-9876543210",
+    "status": "active",
+    "validity_days": 264,
+    "max_machines": 3
+  },
+  {
+    "org_name": "Example Org 2",
+    "contact_name": "Client Two",
+    "email": "client2@example.com",
+    "phone": "+91-9876543211",
+    "status": "active",
+    "validity_days": 365,
+    "max_machines": 5
+  }
+]

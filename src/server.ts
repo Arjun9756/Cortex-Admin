@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import env from './config/env.config.js';
 import { initDatabase } from './db/db.init.js';
+import { startDatabaseKeepalive, getDatabaseKeepaliveStatus } from './config/db.config.js';
 
 // Import Route Handlers
 import clientRoutes from './modules/client/client.route.js';
@@ -134,6 +135,7 @@ app.get(['/api/health', '/health'], (req: Request, res: Response) => {
         service: 'Cortex License & Admin Control Plane',
         version: '1.0.2-canonical-admin',
         environment: process.env.VERCEL ? 'vercel-serverless' : 'standalone',
+        database_keepalive: getDatabaseKeepaliveStatus(),
         timestamp: new Date().toISOString()
     });
 });
@@ -160,6 +162,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 async function startServer() {
     try {
         await ensureDatabaseReady();
+        startDatabaseKeepalive();
 
         app.listen(env.PORT, () => {
             console.log(`\n=================================================`);

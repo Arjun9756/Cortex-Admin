@@ -724,11 +724,11 @@
         });
 
         const totalPings = Number(pingStats.total ?? 0);
-        const successRate = pingStats.success_rate_percent !== undefined
-            ? Math.round(Number(pingStats.success_rate_percent) * 10) / 10
-            : (state.logs.length
-                ? Math.round((state.logs.filter(l => l.status === 'success').length / state.logs.length) * 100)
-                : 100);
+        const successRate = totalPings > 0
+            ? (pingStats.success_rate_percent !== undefined
+                ? Math.round(Number(pingStats.success_rate_percent) * 10) / 10
+                : (state.logs.length ? Math.round((state.logs.filter(l => l.status === 'success').length / state.logs.length) * 100) : 100))
+            : (state.logs.length ? Math.round((state.logs.filter(l => l.status === 'success').length / state.logs.length) * 100) : 100);
 
         const totalClients = clientStats.total ?? state.clients.length;
         const activeClients = clientStats.active ?? state.clients.filter(c => c.status === 'active').length;
@@ -2463,6 +2463,15 @@
                 const desc = document.getElementById('resend-banner-desc');
                 const isLive = Boolean(res.data.configured && res.data.valid);
 
+                const broadcastFrom = res.data.broadcastFrom || 'CortexCo <notification@cortexco.in>';
+                document.querySelectorAll('.bcast-from-text').forEach(el => {
+                    el.textContent = broadcastFrom;
+                });
+                const senderDisplay = document.querySelector('.gmail-sender-display');
+                if (senderDisplay) {
+                    senderDisplay.innerHTML = `<strong>CortexCo</strong> &lt;notification@cortexco.in&gt; <span class="gmail-verified-tag">✓ Verified Domain</span>`;
+                }
+
                 ['bcast-resend-status-pill', 'supp-resend-status-pill'].forEach(pillId => {
                     const pill = document.getElementById(pillId);
                     if (!pill) return;
@@ -3685,7 +3694,7 @@
         if (subj) subj.value = '';
         if (pre) pre.value = '';
         if (canvas) {
-            canvas.innerHTML = `<p>Hello {{{contact.first_name|there}}},</p><p>We are reaching out with an official update regarding your CortexCo workspace and connected infrastructure.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="border-left: 3px solid #2f8cff; padding-left: 12px;"><div style="font-size: 16px; font-weight: 800; color: #111827; letter-spacing: -0.2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0 0 6px 0;">This is an automated message from CortexCo. Please do not reply to this email, as this mailbox is not monitored.</p><p style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin: 0;">To stop receiving updates, <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #2563eb; text-decoration: underline;">unsubscribe here</a>.</p>`;
+            canvas.innerHTML = `<p>Hello {{{contact.first_name|there}}},</p><p>We are reaching out with an official update regarding your CortexCo workspace and connected infrastructure.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 62px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #111827; letter-spacing: -0.2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 11.5px; color: #6b7280; line-height: 1.5; margin: 0;">This is an official administrative notification dispatched from CortexCo (notification@cortexco.in).</p>`;
         }
         if (raw) raw.value = '';
         showToast('Broadcast composer reset', 'info');
@@ -3975,7 +3984,7 @@
         if (cc) cc.value = '';
         if (bcc) bcc.value = '';
         if (canvas) {
-            canvas.innerHTML = `<p>Hello,</p><p>Thank you for contacting CortexCo Support. We have received your query and are reviewing the details.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="border-left: 3px solid #2f8cff; padding-left: 12px;"><div style="font-size: 16px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 14px; font-weight: 700; color: #111827; margin-top: 2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; font-size: 13px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 500;">cortexco.in</a><span style="color: #cbd5e1; margin: 0 8px;">|</span><a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: none; font-weight: 500;">support@cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0;">Need help? Reply to this email or write to <a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: underline;">support@cortexco.in</a> and our team will get back to you as soon as possible.</p>`;
+            canvas.innerHTML = `<p>Hello,</p><p>Thank you for contacting CortexCo Support. We have received your query and are reviewing the details.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 72px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 15px; font-weight: 700; color: #111827; margin-top: 2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; font-size: 13px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 500;">cortexco.in</a><span style="color: #cbd5e1; margin: 0 8px;">|</span><a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: none; font-weight: 500;">support@cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0;">Need help? Reply to this email or write to <a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: underline;">support@cortexco.in</a> and our team will get back to you as soon as possible.</p>`;
         }
         state.supportAttachments = [];
         renderAttachedFileChips();
@@ -4103,7 +4112,7 @@
         const canvas = document.getElementById('supp-editor-canvas');
         if (!canvas) return;
 
-        const signatureBlock = `<br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="border-left: 3px solid #2f8cff; padding-left: 12px;"><div style="font-size: 16px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 11px; color: #475569; margin-top: 2px;">CortexCo Engineering Infrastructure</div><div style="margin-top: 6px;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table>`;
+        const signatureBlock = `<br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 72px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1.2;">Support Team</div><div style="font-size: 15px; font-weight: 700; color: #111827; margin-top: 2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; font-size: 13px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 500;">cortexco.in</a><span style="color: #cbd5e1; margin: 0 8px;">|</span><a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: none; font-weight: 500;">support@cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 12px; color: #6b7280; line-height: 1.5; margin: 0;">Need help? Reply to this email or write to <a href="mailto:support@cortexco.in" style="color: #2563eb; text-decoration: underline;">support@cortexco.in</a> and our team will get back to you as soon as possible.</p>`;
 
         const templates = {
             welcome: {
@@ -4339,7 +4348,7 @@
         let bodyHtml = '';
 
         if (type === 'broadcast') {
-            fromText = 'CortexCo <no-reply@cortexco.in>';
+            fromText = 'CortexCo <notification@cortexco.in>';
             const audName = state.audiences.find(a => a.id === state.currentAudienceId)?.name || 'Target Audience';
             toText = `${audName} (All Active Subscribers)`;
             const campName = document.getElementById('bcast-campaign-name-input')?.value.trim();

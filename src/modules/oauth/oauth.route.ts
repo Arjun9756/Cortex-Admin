@@ -145,8 +145,7 @@ oauthRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
 
         let redirectUrl = '';
         if (provider === 'github') {
-            const scopes = encodeURIComponent('repo read:org user:email read:user');
-            redirectUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${scopes}&state=${encodeURIComponent(state)}`;
+            redirectUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}`;
         } else if (provider === 'slack') {
             const botScopes = encodeURIComponent('channels:read,channels:join,channels:history,groups:read,groups:history,users:read,users:read.email,team:read');
             redirectUrl = `https://slack.com/oauth/v2/authorize?client_id=${encodeURIComponent(clientId)}&scope=${botScopes}&redirect_uri=${encodeURIComponent(callbackUrl)}&state=${encodeURIComponent(state)}`;
@@ -221,6 +220,12 @@ oauthRouter.get('/:provider/callback', async (req: Request, res: Response) => {
                 throw new Error(tokenData.error_description || tokenData.error || 'Failed to exchange GitHub code');
             }
             accessToken = tokenData.access_token;
+            if (tokenData.refresh_token) {
+                refreshToken = tokenData.refresh_token;
+            }
+            if (tokenData.expires_in) {
+                expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
+            }
             scopes = tokenData.scope ? tokenData.scope.split(',').map((s: string) => s.trim()) : [];
 
             // Fetch GitHub profile
@@ -558,6 +563,43 @@ oauthRouter.post('/:provider/refresh', async (req: Request, res: Response) => {
                 accessToken: tokenData.access_token,
                 refreshToken: tokenData.refresh_token || refresh_token,
                 expiresIn: tokenData.expires_in || 3600
+            });
+        }
+
+        if (provider === 'github') {
+            const clientId = env.GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID || '';
+            const clientSecret = env.GITHUB_CLIENT_SECRET || process.env.GITHUB_CLIENT_SECRET || '';
+
+            if (!clientId || !clientSecret) {
+                return res.status(500).json({ success: false, error: 'GitHub App credentials not configured on Cortex-Admin' });
+            }
+
+            const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({
+                    grant_type: 'refresh_token',
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    refresh_token: refresh_token.trim()
+                })
+            });
+
+            const tokenData = (await tokenRes.json()) as any;
+            if (!tokenRes.ok || !tokenData.access_token) {
+                return res.status(tokenRes.status || 400).json({
+                    success: false,
+                    error: tokenData.error || 'Failed to refresh GitHub token',
+                    error_description: tokenData.error_description || 'Invalid grant'
+                });
+            }
+
+            return res.json({
+                success: true,
+                provider: 'github',
+                accessToken: tokenData.access_token,
+                refreshToken: tokenData.refresh_token || refresh_token,
+                expiresIn: tokenData.expires_in || 28800
             });
         }
 

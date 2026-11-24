@@ -10,12 +10,18 @@ dotenv.config({
 })
 
 const env = {
-    AIVEN_SQL_HOST:process.env.AIVEN_SQL_HOST!,
-    AIVEN_SQL_PORT:process.env.AIVEN_SQL_PORT!,
-    AIVEN_SQL_USER:process.env.AIVEN_SQL_USER!,
-    AIVEN_SQL_PASSWORD:process.env.AIVEN_SQL_PASSWORD!,
+    DATABASE_SQL_HOST: process.env.DATABASE_SQL_HOST || process.env.DTABASE_SQL_HOST || process.env.AIVEN_SQL_HOST || '',
+    DATABASE_SQL_PORT: process.env.DATABASE_SQL_PORT || process.env.AIVEN_SQL_PORT || '4000',
+    DATABASE_SQL_USER: process.env.DATABASE_SQL_USER || process.env.AIVEN_SQL_USER || '',
+    DATABASE_SQL_PASSWORD: process.env.DATABASE_SQL_PASSWORD || process.env.DATBASE_SQL_PASSWORD || process.env.AIVEN_SQL_PASSWORD || '',
+    DATABASE_SQL_DATABASE: process.env.DATABASE_SQL_DATABASE || process.env.AIVEN_SQL_DATABASE || 'cortex_admin',
 
-    AIVEN_SQL_DATABASE: process.env.AIVEN_SQL_DATABASE || 'defaultdb',
+    // Backward-compatibility aliases
+    AIVEN_SQL_HOST: process.env.DATABASE_SQL_HOST || process.env.DTABASE_SQL_HOST || process.env.AIVEN_SQL_HOST || '',
+    AIVEN_SQL_PORT: process.env.DATABASE_SQL_PORT || process.env.AIVEN_SQL_PORT || '4000',
+    AIVEN_SQL_USER: process.env.DATABASE_SQL_USER || process.env.AIVEN_SQL_USER || '',
+    AIVEN_SQL_PASSWORD: process.env.DATABASE_SQL_PASSWORD || process.env.DATBASE_SQL_PASSWORD || process.env.AIVEN_SQL_PASSWORD || '',
+    AIVEN_SQL_DATABASE: process.env.DATABASE_SQL_DATABASE || process.env.AIVEN_SQL_DATABASE || 'cortex_admin',
 
     PORT: parseInt(process.env.PORT || '5000'),
     JWT_SECRET: process.env.JWT_SECRET || 'cortex-super-secret-key-2026',
@@ -40,7 +46,7 @@ const env = {
         : 'https://admin.cortexco.in',
 
     RESEND_API_KEY: process.env.RESEND_API_KEY || '',
-    RESEND_BROADCAST_FROM: process.env.RESEND_BROADCAST_FROM || 'CortexCo <no-reply@cortexco.in>',
+    RESEND_BROADCAST_FROM: process.env.RESEND_BROADCAST_FROM || 'CortexCo <notification@cortexco.in>',
     RESEND_SUPPORT_FROM: process.env.RESEND_SUPPORT_FROM || 'CortexCo Support <support@cortexco.in>'
 }
 

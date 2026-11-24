@@ -128,7 +128,7 @@ export class ResendService {
     // ─────────────────────────────────────────────────────────────────────────
     static async checkStatus(): Promise<{ configured: boolean; valid: boolean; error?: string; broadcastFrom: string; supportFrom: string }> {
         const apiKey = this.getApiKey();
-        const broadcastFrom = env.RESEND_BROADCAST_FROM || 'CortexCo <no-reply@cortexco.in>';
+        const broadcastFrom = env.RESEND_BROADCAST_FROM || 'CortexCo <notification@cortexco.in>';
         const supportFrom = env.RESEND_SUPPORT_FROM || 'CortexCo Support <support@cortexco.in>';
 
         if (!apiKey) {
@@ -476,7 +476,7 @@ export class ResendService {
         previewText?: string | undefined;
         send?: boolean | undefined;
     }): Promise<{ id: string }> {
-        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'CortexCo <no-reply@cortexco.in>';
+        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'CortexCo <notification@cortexco.in>';
 
         const body: Record<string, any> = {
             audience_id: payload.segmentId,
