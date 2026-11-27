@@ -6,3 +6,4 @@ ca.pem
 dist
 *.log
 scripts/*.mjs
+scratch/

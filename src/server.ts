@@ -62,9 +62,16 @@ function resolvePublicPath(): string {
 
 const publicPath = resolvePublicPath();
 
-// Explicitly return 204 No Content for favicon requests to prevent loading any icon in browser tabs
+// Serve official transparent CortexCo mark for browser tab favicon
 app.get(['/favicon.ico', '/favicon.png'], (req: Request, res: Response) => {
-    res.status(204).end();
+    const faviconPath = path.join(publicPath, 'assets', 'cortexco-mark-clean.png');
+    if (fs.existsSync(faviconPath)) {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.sendFile(faviconPath);
+    } else {
+        res.status(204).end();
+    }
 });
 
 // Cache-busting: Disable browser caching for admin control plane assets so updates apply immediately
@@ -132,7 +139,7 @@ app.use('/email', emailRoutes);
 app.get(['/api/health', '/health'], (req: Request, res: Response) => {
     res.json({
         status: 'online',
-        service: 'Cortex License & Admin Control Plane',
+        service: 'CortexCo License & Admin Control Plane',
         version: '1.0.2-canonical-admin',
         environment: process.env.VERCEL ? 'vercel-serverless' : 'standalone',
         database_keepalive: getDatabaseKeepaliveStatus(),

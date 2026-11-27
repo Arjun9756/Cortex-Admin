@@ -476,7 +476,7 @@ export class ResendService {
         previewText?: string | undefined;
         send?: boolean | undefined;
     }): Promise<{ id: string }> {
-        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'CortexCo <notification@cortexco.in>';
+        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'CortexCo <notifications@cortexco.in>';
 
         const body: Record<string, any> = {
             audience_id: payload.segmentId,

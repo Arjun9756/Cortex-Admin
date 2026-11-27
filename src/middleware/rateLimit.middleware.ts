@@ -140,7 +140,7 @@ export function createMemoryRateLimiter(options: RateLimitOptions) {
  */
 export const adminAuthRateLimiter = createMemoryRateLimiter({
     windowMs: 60_000,
-    maxRequests: 10,
+    maxRequests: 30,
     keyPrefix: 'admin_auth',
-    message: 'Too many admin authentication requests (max 10/min).'
+    message: 'Too many admin authentication requests (max 30/min).'
 });

@@ -96,6 +96,24 @@ async function validateLicense(licenseKey: string): Promise<{ valid: boolean; cl
     return { valid: true, clientId: license.client_id };
 }
 
+// 0. GET /api/oauth/connectors - Return all client connectors for Admin Console
+oauthRouter.get('/connectors', async (req: Request, res: Response) => {
+    try {
+        const [rows]: any = await pool.query(`
+            SELECT cc.id, cc.client_id, cc.license_key, cc.provider, cc.status,
+                   cc.account_name, cc.account_email, cc.account_id, cc.scopes,
+                   cc.webhook_url, cc.connected_at, cc.updated_at,
+                   c.name as client_name, c.email as client_email
+            FROM client_connectors cc
+            LEFT JOIN clients c ON cc.client_id = c.id
+            ORDER BY cc.connected_at DESC
+        `);
+        return res.json({ success: true, data: rows });
+    } catch (err: any) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // 1. GET /api/oauth/:provider/authorize
 oauthRouter.get('/:provider/authorize', async (req: Request, res: Response) => {
     try {
