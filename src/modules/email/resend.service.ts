@@ -470,13 +470,14 @@ export class ResendService {
         name?: string | undefined;
         segmentId: string;
         from?: string | undefined;
+        replyTo?: string | undefined;
         subject: string;
         html?: string | undefined;
         text?: string | undefined;
         previewText?: string | undefined;
         send?: boolean | undefined;
     }): Promise<{ id: string }> {
-        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'CortexCo <notifications@cortexco.in>';
+        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'CortexCo <notification@cortexco.in>';
 
         const body: Record<string, any> = {
             audience_id: payload.segmentId,
@@ -486,6 +487,7 @@ export class ResendService {
             send: !!payload.send
         };
 
+        if (payload.replyTo) body.reply_to = payload.replyTo;
         if (payload.previewText) body.preview_text = payload.previewText;
         if (payload.html) body.html = this.qualifyHtmlAssetUrls(payload.html);
         if (payload.text) body.text = payload.text;
@@ -499,6 +501,43 @@ export class ResendService {
             return res.data;
         }
         throw new Error(res.error?.message || 'Failed to create broadcast');
+    }
+
+    static async sendSpecialDirectBroadcast(payload: {
+        from: string;
+        recipients: string[];
+        subject: string;
+        html?: string | undefined;
+        text?: string | undefined;
+        replyTo?: string | undefined;
+    }): Promise<{ sent: number; failed: number; ids: string[] }> {
+        const fromAddress = payload.from || env.RESEND_BROADCAST_FROM || 'CortexCo <notification@cortexco.in>';
+        const validRecipients = payload.recipients.filter(r => r && r.includes('@'));
+        if (validRecipients.length === 0) {
+            throw new Error('No valid recipient email addresses provided');
+        }
+
+        const ids: string[] = [];
+        let failed = 0;
+
+        for (const recipient of validRecipients) {
+            try {
+                const res = await this.sendEmail({
+                    from: fromAddress,
+                    to: recipient,
+                    subject: payload.subject,
+                    html: payload.html,
+                    text: payload.text,
+                    replyTo: payload.replyTo
+                });
+                if (res && res.id) ids.push(res.id);
+            } catch (err) {
+                console.error(`[Special Broadcast] Error sending to ${recipient}:`, err);
+                failed++;
+            }
+        }
+
+        return { sent: ids.length, failed, ids };
     }
 
     static async sendBroadcast(broadcastId: string): Promise<{ id: string }> {

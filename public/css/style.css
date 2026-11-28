@@ -4816,5 +4816,183 @@ kbd {
     color: #60a5fa;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPECIAL BROADCAST & CUSTOM SENDER CONTROL STUDIO
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.special-bcast-pill {
+    position: relative;
+    border-color: rgba(147, 51, 234, 0.25) !important;
+}
+
+.special-bcast-pill:hover,
+.special-bcast-pill.active {
+    background: rgba(147, 51, 234, 0.14) !important;
+    border-color: rgba(147, 51, 234, 0.45) !important;
+    color: #e9d5ff !important;
+}
+
+.special-bcast-pill svg {
+    color: #c084fc;
+}
+
+.badge-custom-from {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(147, 51, 234, 0.25) 100%);
+    border: 1px solid rgba(147, 51, 234, 0.35);
+    color: #d8b4fe;
+    padding: 1px 6px;
+    border-radius: 6px;
+    margin-left: 6px;
+}
+
+.special-compose-header {
+    background: linear-gradient(90deg, #161226 0%, #111722 100%);
+    border-bottom: 1px solid rgba(147, 51, 234, 0.2);
+}
+
+.special-icon-badge {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #7c3aed 0%, #2563eb 100%);
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 10px rgba(124, 58, 237, 0.4);
+}
+
+.special-tag-pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(147, 51, 234, 0.15);
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    color: #c084fc;
+}
+
+.special-from-row {
+    background: rgba(147, 51, 234, 0.03);
+}
+
+.special-sender-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    flex-wrap: wrap;
+}
+
+.special-preset-select {
+    background: #141c28;
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 12px;
+    padding: 4px 8px;
+    outline: none;
+    cursor: pointer;
+    max-width: 240px;
+}
+
+.special-from-inputs-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 2px 8px;
+    flex: 1;
+    min-width: 280px;
+}
+
+.special-from-inputs-wrap:focus-within {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.25);
+}
+
+.special-input-name {
+    border: none !important;
+    background: transparent !important;
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+    color: #f8fafc !important;
+    outline: none !important;
+    padding: 3px 0 !important;
+    min-width: 130px;
+    width: 38%;
+}
+
+.special-sep {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.special-input-email {
+    border: none !important;
+    background: transparent !important;
+    font-size: 12.5px !important;
+    font-family: var(--font-mono) !important;
+    color: #38bdf8 !important;
+    outline: none !important;
+    padding: 3px 0 !important;
+    flex: 1;
+    min-width: 140px;
+}
+
+.special-target-mode-switcher {
+    display: inline-flex;
+    background: #0d131e;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.target-mode-pill {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.target-mode-pill.active {
+    background: #1e293b;
+    color: #ffffff;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.special-direct-recipients-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+.special-send-btn {
+    background: linear-gradient(135deg, #7c3aed 0%, #2563eb 100%) !important;
+    box-shadow: 0 2px 10px rgba(124, 58, 237, 0.45) !important;
+}
+
+.special-send-btn:hover {
+    background: linear-gradient(135deg, #9333ea 0%, #3b82f6 100%) !important;
+    box-shadow: 0 4px 16px rgba(124, 58, 237, 0.6) !important;
+}
+
 
 

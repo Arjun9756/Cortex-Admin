@@ -270,7 +270,7 @@ export class EmailController {
 
     static async createBroadcast(req: Request, res: Response) {
         try {
-            const { name, segmentId, subject, html, text, previewText, send } = req.body;
+            const { name, segmentId, subject, html, text, previewText, send, from, replyTo, recipients } = req.body;
 
             const cleanSegmentId = typeof segmentId === 'string' ? segmentId.trim() : '';
             const cleanSubject = typeof subject === 'string' ? subject.trim() : '';
@@ -278,10 +278,17 @@ export class EmailController {
             const cleanHtml = typeof html === 'string' && html.trim() ? html.trim() : undefined;
             const cleanText = typeof text === 'string' && text.trim() ? text.trim() : undefined;
             const cleanPreviewText = typeof previewText === 'string' && previewText.trim() ? previewText.trim() : undefined;
+            const cleanFrom = typeof from === 'string' && from.trim() ? from.trim() : undefined;
+            const cleanReplyTo = typeof replyTo === 'string' && replyTo.trim() ? replyTo.trim() : undefined;
 
-            if (!cleanSegmentId) {
-                return res.status(400).json({ success: false, message: 'Audience / Segment selection is required' });
+            // Extract recipients if direct list provided
+            let cleanRecipients: string[] = [];
+            if (Array.isArray(recipients)) {
+                cleanRecipients = recipients.map(r => String(r).trim().toLowerCase()).filter(r => r.includes('@'));
+            } else if (typeof recipients === 'string' && recipients.trim()) {
+                cleanRecipients = recipients.split(/[,;\s\n]+/).map(r => r.trim().toLowerCase()).filter(r => r.includes('@'));
             }
+
             if (!cleanSubject) {
                 return res.status(400).json({ success: false, message: 'Broadcast Subject line is required' });
             }
@@ -289,9 +296,34 @@ export class EmailController {
                 return res.status(400).json({ success: false, message: 'Broadcast body (HTML or plain text) is required' });
             }
 
+            // Case 1: Direct custom recipient list mode (Special Broadcast)
+            if (cleanRecipients.length > 0 && !cleanSegmentId) {
+                const sendResult = await ResendService.sendSpecialDirectBroadcast({
+                    from: cleanFrom || env.RESEND_BROADCAST_FROM || 'CortexCo <notification@cortexco.in>',
+                    recipients: cleanRecipients,
+                    subject: cleanSubject,
+                    html: cleanHtml,
+                    text: cleanText,
+                    replyTo: cleanReplyTo
+                });
+
+                return res.status(200).json({
+                    success: true,
+                    message: `Special broadcast dispatched to ${sendResult.sent} recipient(s)${sendResult.failed > 0 ? ` (${sendResult.failed} failed)` : ''}.`,
+                    data: sendResult
+                });
+            }
+
+            // Case 2: Audience segment mode
+            if (!cleanSegmentId) {
+                return res.status(400).json({ success: false, message: 'Target Audience or recipient email list is required' });
+            }
+
             const result = await ResendService.createBroadcast({
                 name: cleanName || cleanSubject,
                 segmentId: cleanSegmentId,
+                from: cleanFrom,
+                replyTo: cleanReplyTo,
                 subject: cleanSubject,
                 html: cleanHtml,
                 text: cleanText,
@@ -338,7 +370,7 @@ export class EmailController {
     // ─────────────────────────────────────────────────────────────────────────
     static async sendSupportEmail(req: Request, res: Response) {
         try {
-            const { to, subject, html, text, cc, bcc, replyTo, attachments } = req.body;
+            const { to, subject, html, text, cc, bcc, replyTo, attachments, from } = req.body;
 
             if (!to || (typeof to === 'string' && !to.includes('@')) || (Array.isArray(to) && to.length === 0)) {
                 return res.status(400).json({ success: false, message: 'Recipient "to" address is required' });
@@ -350,6 +382,7 @@ export class EmailController {
 
             const cleanHtml = typeof html === 'string' && html.trim() ? html.trim() : undefined;
             const cleanText = typeof text === 'string' && text.trim() ? text.trim() : undefined;
+            const cleanFrom = typeof from === 'string' && from.trim() ? from.trim() : undefined;
 
             if (!cleanHtml && !cleanText) {
                 return res.status(400).json({ success: false, message: 'Email body (HTML or text) is required' });
@@ -360,6 +393,7 @@ export class EmailController {
             const cleanReplyTo = typeof replyTo === 'string' && replyTo.trim() ? replyTo.trim() : undefined;
 
             const result = await ResendService.sendEmail({
+                from: cleanFrom,
                 to,
                 subject: cleanSubject,
                 html: cleanHtml,

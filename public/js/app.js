@@ -86,6 +86,8 @@
         broadcasts: [],
         broadcastSubTab: 'audiences',
         broadcastEditorMode: 'visual',
+        specialEditorMode: 'visual',
+        specialTargetMode: 'audience',
         supportSubTab: 'compose',
         sentEmails: [],
         trackerFilter: 'all',
@@ -2550,6 +2552,7 @@
             renderClientsTable();
             updateDashboardMetrics();
             populateSupportClientPicker();
+            populateSpecialClientPicker();
         }
     }
 
@@ -2875,6 +2878,7 @@
 
                 if (selectAudience) selectAudience.innerHTML = optionsHtml;
                 if (selectCompose) selectCompose.innerHTML = '<option value="">Select target audience...</option>' + optionsHtml;
+                populateSpecialAudiences();
 
                 if (state.audiences.length > 0) {
                     if (!state.currentAudienceId || !state.audiences.some(a => a.id === state.currentAudienceId)) {
@@ -3293,22 +3297,22 @@
     }
 
     function applyFontFamily(font, context) {
-        const canvasId = context === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvasId = context === 'broadcast' ? 'bcast-editor-canvas' : (context === 'special' ? 'special-editor-canvas' : 'supp-editor-canvas');
         const canvas = document.getElementById(canvasId);
         if (canvas) canvas.focus();
         document.execCommand('fontName', false, font);
     }
 
     function applyFontSize(size, context) {
-        const canvasId = context === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvasId = context === 'broadcast' ? 'bcast-editor-canvas' : (context === 'special' ? 'special-editor-canvas' : 'supp-editor-canvas');
         const canvas = document.getElementById(canvasId);
         if (canvas) canvas.focus();
         document.execCommand('fontSize', false, size);
     }
 
     function toggleFormatBar(context) {
-        const barId = context === 'broadcast' ? 'bcast-format-bar' : 'supp-format-bar';
-        const btnId = context === 'broadcast' ? 'btn-toggle-bcast-format' : 'btn-toggle-supp-format';
+        const barId = context === 'broadcast' ? 'bcast-format-bar' : (context === 'special' ? 'special-format-bar' : 'supp-format-bar');
+        const btnId = context === 'broadcast' ? 'btn-toggle-bcast-format' : (context === 'special' ? 'btn-toggle-special-format' : 'btn-toggle-supp-format');
         const bar = document.getElementById(barId);
         const btn = document.getElementById(btnId);
         if (!bar) return;
@@ -3318,7 +3322,7 @@
     }
 
     function toggleComposerExpand(context) {
-        const winId = context === 'broadcast' ? 'bcast-compose-window' : 'supp-compose-window';
+        const winId = context === 'broadcast' ? 'bcast-compose-window' : (context === 'special' ? 'special-compose-window' : 'supp-compose-window');
         const win = document.getElementById(winId);
         if (win) win.classList.toggle('expanded');
     }
@@ -3500,7 +3504,7 @@
             }
         }
 
-        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : (state.activeComposerContext === 'special' ? 'special-editor-canvas' : 'supp-editor-canvas');
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
 
@@ -3668,7 +3672,7 @@
             finalHref = `https://${url}`;
         }
 
-        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : (state.activeComposerContext === 'special' ? 'special-editor-canvas' : 'supp-editor-canvas');
         const canvas = document.getElementById(canvasId);
         if (canvas) canvas.focus();
 
@@ -3680,7 +3684,8 @@
         showToast(isEmail ? 'Email link inserted (mailto:)' : 'Web link inserted', 'info');
     }
 
-    function openButtonModal() {
+    function openButtonModal(context = 'broadcast') {
+        state.activeComposerContext = context;
         saveSelection();
         previewCtaButton();
         const modal = document.getElementById('modal-insert-button');
@@ -3703,7 +3708,8 @@
         const url = document.getElementById('cta-btn-url')?.value.trim() || 'https://cortexco.in';
         const color = document.getElementById('cta-btn-style')?.value || '#2563eb';
 
-        const canvas = document.getElementById('bcast-editor-canvas');
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : (state.activeComposerContext === 'special' ? 'special-editor-canvas' : 'supp-editor-canvas');
+        const canvas = document.getElementById(canvasId);
         if (canvas) canvas.focus();
         restoreSelection();
 
@@ -3768,7 +3774,7 @@
     }
 
     function applyColor(color, mode) {
-        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : (state.activeComposerContext === 'special' ? 'special-editor-canvas' : 'supp-editor-canvas');
         const canvas = document.getElementById(canvasId);
         if (canvas) canvas.focus();
         restoreSelection();
@@ -3807,7 +3813,7 @@
     }
 
     function insertEmoji(em) {
-        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : 'supp-editor-canvas';
+        const canvasId = state.activeComposerContext === 'broadcast' ? 'bcast-editor-canvas' : (state.activeComposerContext === 'special' ? 'special-editor-canvas' : 'supp-editor-canvas');
         const canvas = document.getElementById(canvasId);
         if (canvas) canvas.focus();
         restoreSelection();
@@ -3968,7 +3974,7 @@
 
     function switchBroadcastSubTab(subTab) {
         state.broadcastSubTab = subTab;
-        const tabs = ['audiences', 'compose', 'history'];
+        const tabs = ['audiences', 'compose', 'special', 'history'];
         tabs.forEach(t => {
             const btn = document.getElementById(`bcast-tabbtn-${t}`);
             const view = document.getElementById(`bcast-view-${t}`);
@@ -3988,6 +3994,9 @@
             if (selectCompose && state.currentAudienceId) {
                 selectCompose.value = state.currentAudienceId;
             }
+        } else if (subTab === 'special') {
+            populateSpecialAudiences();
+            populateSpecialClientPicker();
         }
     }
 
@@ -4244,6 +4253,289 @@
             await loadBroadcasts();
         } else {
             showToast(res.message || 'Failed to trigger broadcast', 'error');
+        }
+    }
+
+    // --- SPECIAL BROADCAST (CUSTOM SENDER IDENTITY & DIRECT TARGETING) ---
+
+    function populateSpecialAudiences() {
+        const select = document.getElementById('special-compose-audience');
+        if (!select) return;
+        const currentVal = select.value || state.currentAudienceId;
+        select.innerHTML = '<option value="">Select target audience segment...</option>' + 
+            state.audiences.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name || 'Audience')} (${escapeHtml(a.id)})</option>`).join('');
+        if (currentVal && state.audiences.some(a => a.id === currentVal)) {
+            select.value = currentVal;
+        }
+    }
+
+    function populateSpecialClientPicker() {
+        const select = document.getElementById('special-client-quickpicker');
+        if (!select) return;
+        const validClients = (state.clients || []).filter(c => c.email && c.email.includes('@'));
+        select.innerHTML = '<option value="">+ Add Client Email...</option>' +
+            validClients.map(c => `<option value="${escapeHtml(c.email)}">${escapeHtml(c.org_name || 'Client')} &lt;${escapeHtml(c.email)}&gt;</option>`).join('');
+    }
+
+    function applySpecialSenderPreset(preset) {
+        const nameInput = document.getElementById('special-from-name');
+        const emailInput = document.getElementById('special-from-email');
+        if (!nameInput || !emailInput) return;
+
+        const presets = {
+            ceo: { name: 'CortexCo Executive', email: 'ceo@cortexco.in' },
+            security: { name: 'CortexCo Security Desk', email: 'security@cortexco.in' },
+            ops: { name: 'Cortex Operations', email: 'ops@cortexco.in' },
+            updates: { name: 'CortexCo Product Updates', email: 'updates@cortexco.in' },
+            admin: { name: 'Root Administrator', email: 'admin@cortexco.in' },
+            notification: { name: 'CortexCo Notification', email: 'notification@cortexco.in' },
+            support: { name: 'Cortex Support Helpdesk', email: 'support@cortexco.in' }
+        };
+
+        if (preset === 'custom') {
+            nameInput.focus();
+            return;
+        }
+
+        const conf = presets[preset];
+        if (conf) {
+            nameInput.value = conf.name;
+            emailInput.value = conf.email;
+        }
+    }
+
+    function toggleSpecialReplyTo() {
+        const row = document.getElementById('special-replyto-row');
+        if (!row) return;
+        const isHidden = row.style.display === 'none';
+        row.style.display = isHidden ? 'flex' : 'none';
+        const btn = document.getElementById('btn-toggle-special-replyto');
+        if (btn) btn.classList.toggle('active', isHidden);
+        if (isHidden) document.getElementById('special-replyto-input')?.focus();
+    }
+
+    function switchSpecialTargetMode(mode) {
+        state.specialTargetMode = mode;
+        const btnAud = document.getElementById('special-target-btn-audience');
+        const btnDir = document.getElementById('special-target-btn-direct');
+        const wrapAud = document.getElementById('special-target-audience-wrap');
+        const wrapDir = document.getElementById('special-target-direct-wrap');
+
+        if (mode === 'direct') {
+            if (btnAud) btnAud.classList.remove('active');
+            if (btnDir) btnDir.classList.add('active');
+            if (wrapAud) wrapAud.style.display = 'none';
+            if (wrapDir) wrapDir.style.display = 'flex';
+            document.getElementById('special-direct-recipients-input')?.focus();
+        } else {
+            if (btnAud) btnAud.classList.add('active');
+            if (btnDir) btnDir.classList.remove('active');
+            if (wrapAud) wrapAud.style.display = 'block';
+            if (wrapDir) wrapDir.style.display = 'none';
+        }
+    }
+
+    function addSpecialRecipientFromClient(email) {
+        if (!email) return;
+        switchSpecialTargetMode('direct');
+        const input = document.getElementById('special-direct-recipients-input');
+        if (!input) return;
+        const current = input.value.split(',').map(s => s.trim()).filter(Boolean);
+        if (!current.includes(email)) {
+            current.push(email);
+            input.value = current.join(', ');
+            showToast(`Added ${email}`, 'info');
+        }
+        const select = document.getElementById('special-client-quickpicker');
+        if (select) select.value = '';
+    }
+
+    function fillAllClientEmailsForSpecial() {
+        switchSpecialTargetMode('direct');
+        const emails = (state.clients || []).map(c => c.email && c.email.trim()).filter(e => e && e.includes('@'));
+        const uniqueEmails = Array.from(new Set(emails));
+        if (uniqueEmails.length === 0) {
+            showToast('No registered client emails available', 'info');
+            return;
+        }
+        const input = document.getElementById('special-direct-recipients-input');
+        if (input) {
+            input.value = uniqueEmails.join(', ');
+            showToast(`Selected all ${uniqueEmails.length} client email(s)`, 'success');
+        }
+    }
+
+    function toggleSpecialPreheader() {
+        const row = document.getElementById('special-preheader-row');
+        if (!row) return;
+        const isHidden = row.style.display === 'none';
+        row.style.display = isHidden ? 'flex' : 'none';
+        const btn = document.getElementById('btn-toggle-special-preheader');
+        if (btn) btn.classList.toggle('active', isHidden);
+        if (isHidden) document.getElementById('special-preview-text-input')?.focus();
+    }
+
+    function setSpecialEditorMode(mode) {
+        state.specialEditorMode = mode;
+        const visualBtn = document.getElementById('special-mode-visual');
+        const htmlBtn = document.getElementById('special-mode-html');
+        const visualCanvas = document.getElementById('special-editor-canvas');
+        const rawTextarea = document.getElementById('special-editor-raw');
+        const toolbar = document.getElementById('special-format-bar');
+
+        if (mode === 'html') {
+            if (visualBtn) visualBtn.classList.remove('active');
+            if (htmlBtn) htmlBtn.classList.add('active');
+            if (rawTextarea && visualCanvas) {
+                rawTextarea.value = visualCanvas.innerHTML.trim();
+                visualCanvas.style.display = 'none';
+                rawTextarea.style.display = 'block';
+            }
+            if (toolbar) toolbar.style.display = 'none';
+        } else {
+            if (visualBtn) visualBtn.classList.add('active');
+            if (htmlBtn) htmlBtn.classList.remove('active');
+            if (rawTextarea && visualCanvas) {
+                visualCanvas.innerHTML = rawTextarea.value.trim();
+                rawTextarea.style.display = 'none';
+                visualCanvas.style.display = 'block';
+            }
+            if (toolbar) toolbar.style.display = 'flex';
+        }
+    }
+
+    function insertMergeTagSpecial(tag) {
+        if (state.specialEditorMode === 'html') {
+            const textarea = document.getElementById('special-editor-raw');
+            if (!textarea) return;
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = textarea.value;
+            textarea.value = text.substring(0, start) + tag + text.substring(end);
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = start + tag.length;
+        } else {
+            const canvas = document.getElementById('special-editor-canvas');
+            if (!canvas) return;
+            canvas.focus();
+            document.execCommand('insertText', false, tag);
+        }
+    }
+
+    async function resetSpecialComposer() {
+        const ok = await showConfirmModal('Reset Special Broadcast Composer', 'Discard current edits and restore the default Special dispatch template?');
+        if (!ok) return;
+        const nameInput = document.getElementById('special-from-name');
+        const emailInput = document.getElementById('special-from-email');
+        const replyToInput = document.getElementById('special-replyto-input');
+        const directRecipInput = document.getElementById('special-direct-recipients-input');
+        const camp = document.getElementById('special-campaign-name-input');
+        const subj = document.getElementById('special-subject-input');
+        const pre = document.getElementById('special-preview-text-input');
+        const canvas = document.getElementById('special-editor-canvas');
+        const raw = document.getElementById('special-editor-raw');
+
+        if (nameInput) nameInput.value = 'CortexCo Executive';
+        if (emailInput) emailInput.value = 'ceo@cortexco.in';
+        if (replyToInput) replyToInput.value = '';
+        if (directRecipInput) directRecipInput.value = '';
+        if (camp) camp.value = '';
+        if (subj) subj.value = '';
+        if (pre) pre.value = '';
+        if (canvas) {
+            canvas.innerHTML = `<p>Dear {{{contact.first_name|Valued Partner}}},</p><p>This is an official administrative priority dispatch regarding your CortexCo infrastructure and connected endpoints.</p><br><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;"><table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"><tr><td style="vertical-align: middle; padding-right: 14px;"><img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;"></td><td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 62px;"></td><td style="vertical-align: middle; padding-left: 14px;"><div style="font-size: 18px; font-weight: 800; color: #111827; letter-spacing: -0.2px; line-height: 1.2;">Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span></div><div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">ENGINEERING INTELLIGENCE</div><div style="margin-top: 6px; line-height: 1;"><a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a></div></td></tr></table><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;"><p style="font-size: 11.5px; color: #6b7280; line-height: 1.5; margin: 0;">This is an official administrative notification dispatched from CortexCo (notification@cortexco.in).</p>`;
+        }
+        if (raw) raw.value = '';
+        showToast('Special broadcast composer reset', 'info');
+    }
+
+    async function submitSpecialBroadcast(sendNow) {
+        const fromName = document.getElementById('special-from-name')?.value.trim() || 'CortexCo Executive';
+        const fromEmail = document.getElementById('special-from-email')?.value.trim();
+        const replyTo = document.getElementById('special-replyto-input')?.value.trim();
+        const campaignName = document.getElementById('special-campaign-name-input')?.value.trim();
+        const subject = document.getElementById('special-subject-input')?.value.trim();
+        const previewText = document.getElementById('special-preview-text-input')?.value.trim();
+
+        if (!fromEmail || !fromEmail.includes('@')) {
+            showToast('Valid sender email required (e.g. ceo@cortexco.in)', 'error');
+            return;
+        }
+
+        const formattedFrom = `${fromName} <${fromEmail}>`;
+
+        let html = '';
+        if (state.specialEditorMode === 'html') {
+            html = document.getElementById('special-editor-raw')?.value.trim();
+        } else {
+            html = document.getElementById('special-editor-canvas')?.innerHTML.trim();
+        }
+
+        if (!subject) {
+            showToast('Enter a special broadcast subject line', 'error');
+            return;
+        }
+        if (!html) {
+            showToast('Email content body cannot be empty', 'error');
+            return;
+        }
+
+        let payload = {
+            name: campaignName || subject,
+            subject,
+            html,
+            previewText: previewText || undefined,
+            from: formattedFrom,
+            replyTo: replyTo || undefined,
+            send: sendNow
+        };
+
+        if (state.specialTargetMode === 'direct') {
+            const rawRecips = document.getElementById('special-direct-recipients-input')?.value.trim() || '';
+            const recipients = rawRecips.split(',').map(s => s.trim()).filter(s => s && s.includes('@'));
+            if (recipients.length === 0) {
+                showToast('Enter at least one valid recipient email address', 'error');
+                return;
+            }
+            payload.recipients = recipients;
+        } else {
+            const segmentId = document.getElementById('special-compose-audience')?.value;
+            if (!segmentId) {
+                showToast('Select a target audience segment', 'error');
+                return;
+            }
+            payload.segmentId = segmentId;
+        }
+
+        const targetDesc = state.specialTargetMode === 'direct' 
+            ? `${payload.recipients.length} direct recipient(s)` 
+            : 'the selected subscriber audience';
+
+        if (sendNow) {
+            const confirmed = await showConfirmModal(
+                'Dispatch Special Broadcast',
+                `Send immediately from "${formattedFrom}" to ${targetDesc}?`
+            );
+            if (!confirmed) return;
+        }
+
+        const btn = sendNow ? document.getElementById('btn-send-special-now') : document.getElementById('btn-save-special-draft');
+        const originalText = btn ? btn.innerHTML : '';
+        if (btn) btn.innerHTML = `<span>Processing...</span>`;
+
+        try {
+            const res = await apiRequest('/api/email/broadcasts', 'POST', payload);
+            if (res.success) {
+                showToast(sendNow ? `Special Broadcast dispatched from ${fromEmail}!` : 'Special broadcast saved as draft', 'success');
+                switchBroadcastSubTab('history');
+                loadBroadcasts();
+            } else {
+                showToast(res.message || 'Failed to submit special broadcast', 'error');
+            }
+        } catch (err) {
+            showToast('Error communicating with Resend', 'error');
+        } finally {
+            if (btn) btn.innerHTML = originalText;
         }
     }
 
@@ -4720,6 +5012,37 @@
             }
 
             // Substitute sample values for preview merge tags
+            bodyHtml = bodyHtml
+                .replace(/\{\{\{contact\.first_name\|?.*?\}\}\}/g, 'Alex')
+                .replace(/\{\{\{contact\.last_name\}\}\}/g, 'Vance')
+                .replace(/\{\{\{contact\.email\}\}\}/g, 'alex.vance@example.com')
+                .replace(/\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}/g, '#unsubscribe');
+
+        } else if (type === 'special') {
+            const fromName = document.getElementById('special-from-name')?.value.trim() || 'CortexCo Executive';
+            const fromEmail = document.getElementById('special-from-email')?.value.trim() || 'ceo@cortexco.in';
+            fromText = `${fromName} <${fromEmail}>`;
+
+            if (state.specialTargetMode === 'direct') {
+                const recips = document.getElementById('special-direct-recipients-input')?.value.trim();
+                toText = recips || 'Direct Custom Recipients';
+            } else {
+                const audSelect = document.getElementById('special-compose-audience');
+                const audName = audSelect?.selectedOptions[0]?.text || 'Target Audience';
+                toText = `${audName} (All Active Subscribers)`;
+            }
+
+            const campName = document.getElementById('special-campaign-name-input')?.value.trim();
+            const rawSubj = document.getElementById('special-subject-input')?.value.trim();
+            subjText = rawSubj || (campName ? `Special: ${campName}` : 'Special Broadcast');
+            preheaderText = document.getElementById('special-preview-text-input')?.value.trim() || '';
+
+            if (state.specialEditorMode === 'html') {
+                bodyHtml = document.getElementById('special-editor-raw')?.value.trim() || '<p>Empty broadcast body</p>';
+            } else {
+                bodyHtml = document.getElementById('special-editor-canvas')?.innerHTML.trim() || '<p>Empty broadcast body</p>';
+            }
+
             bodyHtml = bodyHtml
                 .replace(/\{\{\{contact\.first_name\|?.*?\}\}\}/g, 'Alex')
                 .replace(/\{\{\{contact\.last_name\}\}\}/g, 'Vance')
@@ -5812,6 +6135,7 @@
         // ─── GMAIL COMPOSER CANVAS DRAG & DROP & PHOTO UPLOADER ───
         setupCanvasDragAndDrop('supp-body-container', 'supp-editor-canvas', 'supp-drop-overlay');
         setupCanvasDragAndDrop('bcast-body-container', 'bcast-editor-canvas', 'bcast-drop-overlay');
+        setupCanvasDragAndDrop('special-body-container', 'special-editor-canvas', 'special-drop-overlay');
 
         const photoDropZone = document.getElementById('photo-drop-zone');
         if (photoDropZone) {
@@ -6185,6 +6509,18 @@
         downloadSampleCsv,
         executeCsvImport,
         exportContactsCsv,
+
+        // Special Broadcast API (Custom Sender Identity)
+        applySpecialSenderPreset,
+        toggleSpecialReplyTo,
+        switchSpecialTargetMode,
+        addSpecialRecipientFromClient,
+        fillAllClientEmailsForSpecial,
+        toggleSpecialPreheader,
+        setSpecialEditorMode,
+        insertMergeTagSpecial,
+        resetSpecialComposer,
+        submitSpecialBroadcast,
 
         // Resend Support 1-to-1 Mail API
         switchSupportSubTab,

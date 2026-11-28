@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=5.0.6">
+    <link rel="stylesheet" href="/css/style.css?v=5.0.7">
 </head>
 <body>
     <div class="app-container">
@@ -899,6 +899,11 @@
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                                 <span>Compose Notification</span>
                             </button>
+                            <button class="filter-pill special-bcast-pill" id="bcast-tabbtn-special" onclick="window.app.switchBroadcastSubTab('special')">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                                <span>Special Broadcast</span>
+                                <span class="badge-custom-from">Custom Sender</span>
+                            </button>
                             <button class="filter-pill" id="bcast-tabbtn-history" onclick="window.app.switchBroadcastSubTab('history')">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                                 <span>Notification History</span>
@@ -1298,7 +1303,296 @@
 
                     </div>
 
-                    <!-- SUB-VIEW 3: BROADCAST HISTORY -->
+                    <!-- SUB-VIEW 4: SPECIAL BROADCAST (Custom Sender Studio) -->
+                    <div id="bcast-view-special" class="bcast-subview" style="display: none;">
+                        <div class="gmail-compose-window special-compose-window" id="special-compose-window">
+                            <!-- Gmail Titlebar / Header -->
+                            <div class="gmail-compose-header special-compose-header">
+                                <div class="gmail-header-left">
+                                    <div class="special-icon-badge">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                                    </div>
+                                    <span class="gmail-header-title">Special Broadcast Dispatch</span>
+                                    <span class="special-tag-pill">Custom Sender Identity Active</span>
+                                </div>
+                                <div class="gmail-header-right">
+                                    <div class="gmail-mode-tabs">
+                                        <button type="button" class="g-mode-btn active" id="special-mode-visual" onclick="window.app.setSpecialEditorMode('visual')">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                            <span>Visual Editor</span>
+                                        </button>
+                                        <button type="button" class="g-mode-btn" id="special-mode-html" onclick="window.app.setSpecialEditorMode('html')">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                                            <span>Raw HTML</span>
+                                        </button>
+                                    </div>
+                                    <button type="button" class="gmail-window-btn" title="Toggle Expanded Canvas" onclick="window.app.toggleComposerExpand('special')">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Gmail Envelope Fields -->
+                            <div class="gmail-envelope-container">
+                                <!-- CUSTOM FROM ROW (SPECIAL FEATURE) -->
+                                <div class="gmail-field-row from-row special-from-row">
+                                    <span class="gmail-field-label">From</span>
+                                    <div class="special-sender-controls">
+                                        <!-- Quick Sender Presets -->
+                                        <select id="special-from-preset" class="special-preset-select" onchange="window.app.applySpecialSenderPreset(this.value)" title="Choose a preset or type custom identity">
+                                            <option value="custom">Custom Sender Identity...</option>
+                                            <option value="ceo" selected>Executive Office &lt;ceo@cortexco.in&gt;</option>
+                                            <option value="security">Security Alert Desk &lt;security@cortexco.in&gt;</option>
+                                            <option value="ops">Platform Operations &lt;ops@cortexco.in&gt;</option>
+                                            <option value="updates">Product Updates &lt;updates@cortexco.in&gt;</option>
+                                            <option value="admin">Root Administrator &lt;admin@cortexco.in&gt;</option>
+                                            <option value="notification">Standard Notification &lt;notification@cortexco.in&gt;</option>
+                                            <option value="support">Support Helpdesk &lt;support@cortexco.in&gt;</option>
+                                        </select>
+                                        <!-- Custom From Name & Address inputs -->
+                                        <div class="special-from-inputs-wrap">
+                                            <input type="text" id="special-from-name" class="special-input-name" placeholder="Sender Name" value="CortexCo Executive">
+                                            <span class="special-sep">&lt;</span>
+                                            <input type="text" id="special-from-email" class="special-input-email" placeholder="email@cortexco.in" value="ceo@cortexco.in">
+                                            <span class="special-sep">&gt;</span>
+                                        </div>
+                                    </div>
+                                    <div class="gmail-field-actions">
+                                        <span class="gmail-verified-tag" title="Domain verified via Resend DNS: cortexco.in">✓ Verified Domain</span>
+                                        <button type="button" class="gmail-field-toggle-btn" id="btn-toggle-special-replyto" onclick="window.app.toggleSpecialReplyTo()">Reply-To</button>
+                                    </div>
+                                </div>
+
+                                <!-- Collapsible Reply-To Row -->
+                                <div class="gmail-field-row replyto-row" id="special-replyto-row" style="display: none;">
+                                    <span class="gmail-field-label">Reply-To</span>
+                                    <div class="gmail-input-wrapper">
+                                        <input type="email" id="special-replyto-input" class="gmail-field-input" placeholder="Direct reply email address (e.g. support@cortexco.in or your mailbox)">
+                                    </div>
+                                </div>
+
+                                <!-- Target Recipients (To) Row -->
+                                <div class="gmail-field-row to-row">
+                                    <span class="gmail-field-label">To</span>
+                                    <div class="special-target-mode-switcher">
+                                        <button type="button" class="target-mode-pill active" id="special-target-btn-audience" onclick="window.app.switchSpecialTargetMode('audience')">
+                                            Audience Segment
+                                        </button>
+                                        <button type="button" class="target-mode-pill" id="special-target-btn-direct" onclick="window.app.switchSpecialTargetMode('direct')">
+                                            Direct Recipients
+                                        </button>
+                                    </div>
+
+                                    <!-- Mode A: Audience Segment Select -->
+                                    <div class="gmail-audience-pill-wrapper" id="special-target-audience-wrap">
+                                        <select id="special-compose-audience" class="gmail-audience-select" required>
+                                            <option value="">Select target audience segment...</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Mode B: Direct Custom Recipients Input -->
+                                    <div class="special-direct-recipients-wrap" id="special-target-direct-wrap" style="display: none; flex: 1;">
+                                        <input type="text" id="special-direct-recipients-input" class="gmail-field-input" placeholder="Enter recipient email addresses (comma separated, e.g. client@acme.com, ops@domain.com)">
+                                        <select id="special-client-quickpicker" class="supp-client-picker" onchange="window.app.addSpecialRecipientFromClient(this.value)">
+                                            <option value="">+ Add Client Email...</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="gmail-field-actions">
+                                        <button type="button" class="link-btn" id="special-quick-all-clients" onclick="window.app.fillAllClientEmailsForSpecial()">Select All Clients</button>
+                                    </div>
+                                </div>
+
+                                <!-- Campaign Internal Name -->
+                                <div class="gmail-field-row campaign-row">
+                                    <span class="gmail-field-label">Campaign</span>
+                                    <div class="gmail-input-wrapper">
+                                        <input type="text" id="special-campaign-name-input" class="gmail-field-input" placeholder="Internal campaign identifier (e.g. Urgent Security Advisory, Critical Infrastructure Notice)" autocomplete="off">
+                                    </div>
+                                    <div class="gmail-field-actions">
+                                        <span class="gmail-field-badge">Special Tier</span>
+                                    </div>
+                                </div>
+
+                                <!-- Subject Row -->
+                                <div class="gmail-field-row subject-row">
+                                    <input type="text" id="special-subject-input" class="gmail-subject-input" placeholder="Subject" required autocomplete="off">
+                                    <button type="button" class="gmail-field-toggle-btn" id="btn-toggle-special-preheader" onclick="window.app.toggleSpecialPreheader()" title="Add preheader snippet">Snippet</button>
+                                </div>
+
+                                <!-- Preheader Snippet Row -->
+                                <div class="gmail-field-row preheader-row" id="special-preheader-row" style="display: none;">
+                                    <span class="gmail-field-label">Snippet</span>
+                                    <div class="gmail-input-wrapper">
+                                        <input type="text" id="special-preview-text-input" class="gmail-field-input" placeholder="Inbox preview snippet text...">
+                                    </div>
+                                </div>
+
+                                <!-- Dynamic Variables & Merge Tags Ribbon -->
+                                <div class="gmail-merge-ribbon">
+                                    <span class="ribbon-title">Merge Tags:</span>
+                                    <button type="button" class="tag-chip" onclick="window.app.insertMergeTagSpecial('{{{contact.first_name|there}}}')">+ First Name</button>
+                                    <button type="button" class="tag-chip" onclick="window.app.insertMergeTagSpecial('{{{contact.last_name}}}')">+ Last Name</button>
+                                    <button type="button" class="tag-chip" onclick="window.app.insertMergeTagSpecial('{{{contact.email}}}')">+ Email</button>
+                                    <button type="button" class="tag-chip cta-btn-chip" onclick="window.app.openButtonModal('special')">+ Callout Button</button>
+                                </div>
+                            </div>
+
+                            <!-- Gmail Canvas Body -->
+                            <div class="gmail-body-container" id="special-body-container">
+                                <div id="special-editor-canvas" class="gmail-canvas" contenteditable="true" spellcheck="false" data-placeholder="Compose your special broadcast... (Paste or drag-and-drop images directly)">
+                                    <p>Dear {{{contact.first_name|Valued Partner}}},</p>
+                                    <p>This is an official administrative priority dispatch regarding your CortexCo infrastructure and connected endpoints.</p>
+                                    <br>
+                                    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 20px 0;">
+                                    <table cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                                        <tr>
+                                            <td style="vertical-align: middle; padding-right: 14px;">
+                                                <img src="/assets/cortexco-logo-200.png" alt="CortexCo" width="68" height="68" style="display: block; width: 68px; height: 68px; border-radius: 50%; object-fit: cover;">
+                                            </td>
+                                            <td style="border-left: 2px solid #4f6ef7; width: 2px; padding: 0; height: 62px;"></td>
+                                            <td style="vertical-align: middle; padding-left: 14px;">
+                                                <div style="font-size: 18px; font-weight: 800; color: #111827; letter-spacing: -0.2px; line-height: 1.2;">
+                                                    Cortex<span style="color: #2f8cff;">C</span><span style="color: #8a4dff;">o</span>
+                                                </div>
+                                                <div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #6b7280; text-transform: uppercase; margin-top: 3px; line-height: 1;">
+                                                    ENGINEERING INTELLIGENCE
+                                                </div>
+                                                <div style="margin-top: 6px; line-height: 1;">
+                                                    <a href="https://cortexco.in" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px; font-weight: 500;">cortexco.in</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 14px 0;">
+                                    <p style="font-size: 11.5px; color: #6b7280; line-height: 1.5; margin: 0;">
+                                        This is an official administrative notification dispatched from CortexCo (notification@cortexco.in).
+                                    </p>
+                                </div>
+                                <textarea id="special-editor-raw" class="gmail-raw-textarea" style="display: none;" spellcheck="false"></textarea>
+                                <div class="gmail-drop-overlay" id="special-drop-overlay">
+                                    <div class="drop-cue">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                        <span>Drop image to insert inline</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Gmail Formatting Toolbar -->
+                            <div class="gmail-format-bar" id="special-format-bar">
+                                <button type="button" class="gf-btn" onclick="document.execCommand('undo')" title="Undo (Ctrl+Z)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('redo')" title="Redo (Ctrl+Y)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                </button>
+                                <div class="gf-sep"></div>
+
+                                <select class="gf-select" onchange="document.execCommand('formatBlock', false, this.value)" title="Heading Format">
+                                    <option value="<p>">Normal text</option>
+                                    <option value="<h1>">Heading 1</option>
+                                    <option value="<h2>">Heading 2</option>
+                                    <option value="<h3>">Heading 3</option>
+                                </select>
+
+                                <select class="gf-select" onchange="window.app.applyFontFamily(this.value, 'special')" title="Font Family">
+                                    <option value="sans-serif">Sans Serif</option>
+                                    <option value="serif">Serif</option>
+                                    <option value="monospace">Fixed Width</option>
+                                    <option value="Arial">Arial</option>
+                                    <option value="Georgia">Georgia</option>
+                                </select>
+
+                                <select class="gf-select" onchange="window.app.applyFontSize(this.value, 'special')" title="Font Size">
+                                    <option value="2">Small</option>
+                                    <option value="3" selected>Normal</option>
+                                    <option value="4">Large</option>
+                                    <option value="5">Huge</option>
+                                </select>
+                                <div class="gf-sep"></div>
+
+                                <button type="button" class="gf-btn" onclick="document.execCommand('bold')" title="Bold (Ctrl+B)"><b>B</b></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('italic')" title="Italic (Ctrl+I)"><i>I</i></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('underline')" title="Underline (Ctrl+U)"><u>U</u></button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('strikeThrough')" title="Strikethrough"><s>S</s></button>
+                                <div class="gf-sep"></div>
+
+                                <button type="button" class="gf-btn" onclick="window.app.toggleColorPalette('special', this)" title="Text Color &amp; Highlight">
+                                    <span style="font-weight: 700; border-bottom: 2px solid #a855f7; line-height: 1.1;">A</span>
+                                </button>
+
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyLeft')" title="Align Left">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyCenter')" title="Align Center">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="10" x2="6" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="18" y1="18" x2="6" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('justifyRight')" title="Align Right">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="21" y1="10" x2="7" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="7" y2="18"></line></svg>
+                                </button>
+                                <div class="gf-sep"></div>
+
+                                <button type="button" class="gf-btn" onclick="document.execCommand('insertOrderedList')" title="Numbered List">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="10" y1="6" x2="21" y2="6"></line><line x1="10" y1="12" x2="21" y2="12"></line><line x1="10" y1="18" x2="21" y2="18"></line><path d="M4 6h1v4"></path><path d="M4 10h2"></path><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('insertUnorderedList')" title="Bulleted List">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('formatBlock', false, '<blockquote>')" title="Quote">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path></svg>
+                                </button>
+                                <button type="button" class="gf-btn" onclick="document.execCommand('removeFormat')" title="Clear Formatting">
+                                    <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">T̶</span>
+                                </button>
+                            </div>
+
+                            <!-- Gmail Bottom Action Bar -->
+                            <div class="gmail-bottom-bar">
+                                <div class="gb-left">
+                                    <!-- Send Special Broadcast Now Button -->
+                                    <button type="button" class="gmail-send-btn special-send-btn" id="btn-send-special-now" onclick="window.app.submitSpecialBroadcast(true)" title="Dispatch Special Campaign via Resend">
+                                        <span class="send-text">Send Special Broadcast</span>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                    </button>
+
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-save-special-draft" onclick="window.app.submitSpecialBroadcast(false)" style="margin-left: 8px;">
+                                        Save Draft
+                                    </button>
+
+                                    <!-- Formatting Toggle -->
+                                    <button type="button" class="gb-icon-btn active" id="btn-toggle-special-format" onclick="window.app.toggleFormatBar('special')" title="Formatting Options">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20h16"></path><path d="M12 4L6 18"></path><path d="M12 4l6 14"></path><path d="M8 14h8"></path></svg>
+                                    </button>
+
+                                    <!-- Insert Link -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openLinkModal('special')" title="Insert Link (Ctrl+K)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                    </button>
+
+                                    <!-- Insert Photo / Image (Computer Upload + URL) -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openPhotoModal('special')" title="Insert Photo (From Computer or Web)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                    </button>
+
+                                    <!-- Insert CTA Button -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openButtonModal('special')" title="Insert Callout Button">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="6" width="18" height="12" rx="4"></rect><path d="M10 12h4"></path></svg>
+                                    </button>
+
+                                    <!-- Live Preview -->
+                                    <button type="button" class="gb-icon-btn" onclick="window.app.openLivePreview('special')" title="Interactive Live Preview (Desktop &amp; Mobile)">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    </button>
+                                </div>
+
+                                <div class="gb-right">
+                                    <button type="button" class="gb-icon-btn discard-btn" onclick="window.app.resetSpecialComposer()" title="Reset Composer">
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div id="bcast-view-history" class="bcast-subview" style="display: none;">
                         <div class="workspace-ribbon" style="border-top: none; background: transparent; padding: 10px 0 12px;">
                             <div class="ribbon-left">
@@ -2806,6 +3100,6 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Application Script with Cache Buster -->
-    <script src="/js/app.js?v=5.0.5"></script>
+    <script src="/js/app.js?v=5.0.7"></script>
 </body>
 </html>
